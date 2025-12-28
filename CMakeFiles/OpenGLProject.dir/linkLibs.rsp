@@ -1,0 +1,1 @@
+ "thirdparty/glfw-3.3.2/src/libglfw3.a" "C:/Users/rkuru/vcpkg/installed/x64-mingw-dynamic/debug/lib/libglew32d.dll.a" -lopengl32 -lopengl32 -lglu32 -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 

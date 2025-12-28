@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Users/rkuru/ray_tracer/cmake_install.cmake",
+		"C:/Users/rkuru/ray_tracer/thirdparty/glfw-3.3.2/cmake_install.cmake",
+		"C:/Users/rkuru/ray_tracer/thirdparty/glfw-3.3.2/src/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
