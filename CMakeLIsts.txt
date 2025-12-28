@@ -1,0 +1,74 @@
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "C:/Users/rkuru/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "Vcpkg toolchain file")
+endif()
+cmake_minimum_required(VERSION 3.15)
+project(OpenGLProject CXX)
+
+if(MINGW)
+    set(VCPKG_TARGET_TRIPLET "x64-mingw-dynamic" CACHE STRING "")
+endif()
+
+set(CMAKE_CXX_STANDARD 17)
+
+# 1. Setup GLFW (Using local source in thirdparty)
+# Disable unnecessary GLFW features to speed up your build
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+add_subdirectory(thirdparty/glfw-3.3.2)
+
+# 2. Setup GLM (Header-only)
+# No build required, just point to the include directory
+set(GLM_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/glm)
+
+# 3. Setup ImGui (Docking branch)
+# You must manually list the ImGui source files to compile them
+set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui-docking)
+set(IMGUI_SOURCES
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_demo.cpp
+    # Add backends for GLFW and OpenGL3
+    ${IMGUI_DIR}/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/imgui_impl_opengl3.cpp
+)
+
+find_package(GLEW REQUIRED)
+# 4. Find System OpenGL
+find_package(OpenGL REQUIRED)
+
+# 5. Define Executable
+# Include your main code, GLAD, and the ImGui sources
+add_executable(${PROJECT_NAME} 
+    src/main.cpp 
+    ${IMGUI_SOURCES}
+)
+
+# 6. Include Directories
+target_include_directories(${PROJECT_NAME} PRIVATE 
+    src/include                        # Path to glad/glad.h
+    ${GLM_INCLUDE_DIR}                 # Path to glm/glm.hpp
+    ${IMGUI_DIR}                       # Path to imgui.h
+    ${IMGUI_DIR}/backends              # Path to imgui_impl_glfw.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/stb_image    # Path to stb_image.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/stb_truetype # Path to stb_truetype.h
+)
+
+# 7. Link Libraries
+# 'glfw' is the target name created by add_subdirectory(thirdparty/glfw-3.3.2)
+target_link_libraries(${PROJECT_NAME} PRIVATE 
+    glfw 
+    GLEW::GLEW
+    OpenGL::GL
+)
+if(WIN32)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/bin/glew32d.dll"
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        COMMENT "Copying glew32.dll to output directory"
+    )
+endif()
