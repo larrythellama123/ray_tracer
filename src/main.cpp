@@ -293,7 +293,6 @@ int main() {
     glm::mat4 model_2 = glm::mat4(1.0f);
     model_2 = glm::translate(model_2, sphereCenter);
     model_2 = glm::scale(model_2, glm::vec3(1.0f,1.0f,1.0f)); 
-    Sphere light_source(30,30);
 
     Camera camera(1200,1200);
 
@@ -334,24 +333,9 @@ int main() {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphere.indices.size()*sizeof(unsigned int), sphere.indices.data(), GL_STATIC_DRAW);
 
-
-    GLuint VAO_1, VBO_1;
-    glGenVertexArrays(1, &VAO_1);
-    glGenBuffers(1, &VBO_1);
-
-    glBindVertexArray(VAO_1);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO_1);
-    glBufferData(GL_ARRAY_BUFFER, light_source.vertices.size()* sizeof(float), light_source.vertices.data(), GL_STATIC_DRAW);
-
-
-    unsigned int EBO_1;
-    glGenBuffers(1, &EBO_1);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO_1);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, light_source.indices.size()*sizeof(unsigned int), light_source.indices.data(), GL_STATIC_DRAW);
-
-
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+
 
     // Render loop
     while (!glfwWindowShouldClose(window)) {
@@ -359,39 +343,24 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT);
         glUseProgram(shaderProgram);
         glBindVertexArray(VAO);
-        // glDrawArrays(GL_POINTS, 0, vertexCount);
         camera.process_inputs(window);
-        // camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model);
+        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model);
 
-        // glBindVertexArray(VAO_1);
-        // camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model_2);
+        glDrawElements(GL_TRIANGLES, 
+               sphere.indices.size(),           
+               GL_UNSIGNED_INT, // type of indices in EBO
+               0);           // offset in the EBO
 
-        // glDrawElements(GL_TRIANGLES, 
-        //        sphere.indices.size(),           
-        //        GL_UNSIGNED_INT, // type of indices in EBO
-        //        0);           // offset in the EBO
+        // glBindVertexArray(VAO);
+        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model_2);
 
-        // glDrawElements(GL_TRIANGLES, 
-        //        light_source.indices.size(),           
-        //        GL_UNSIGNED_INT, // type of indices in EBO
-        //        0);           // offset in the EBO
-
-
-
-        // --- Draw Sphere 1 ---
-        glm::mat4 model1 = glm::mat4(1.0f);
-        model1 = glm::translate(model1, sphere1_position);
-        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model1);
-        glDrawElements(GL_TRIANGLES,  sphere.indices.size(), GL_UNSIGNED_INT, 0);
-
-        // --- Draw Sphere 2 ---
-        glm::mat4 model2 = glm::mat4(1.0f);
-        model2 = glm::translate(model2 ,glm::vec3(2.0f,2.0f,2.0f));
-        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model2);
-        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
+        //render light_source
+        glDrawElements(GL_TRIANGLES, 
+               sphere.indices.size(),           
+               GL_UNSIGNED_INT, // type of indices in EBO
+               0);           // offset in the EBO
 
         glBindVertexArray(0);
-
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
