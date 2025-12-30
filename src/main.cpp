@@ -14,12 +14,50 @@
 #include <glm/trigonometric.hpp>
 
 
+struct HitInfo{
+    bool did_hit = false;
+    float dst;
+    glm::vec3 hit_point;
+    glm::vec3 normal;
+};
+
+struct Ray{
+    glm::vec3 origin;
+    glm::vec3 dir;
+};
+
+
+HitInfo RaySphere(Ray ray,  float sphereCenter, float sphereRadius){
+    HitInfo hit_info;
+    glm::vec3 offset_ray_origin = ray.origin - sphereCenter;
+    float a  = glm::dot(ray.dir,ray.dir);
+    float b = 2 * glm::dot(offset_ray_origin,ray.dir);
+    float c = glm::dot(offset_ray_origin,offset_ray_origin) - sphereRadius*sphereRadius;
+    float discrim = b*b - 4*a*c;
+
+    if(discrim >= 0){
+        float dst = (-1*b - std::sqrt(discrim))/(2*a);
+        glm::vec3 hit_point = ray.origin + (dst*ray.dir);
+        hit_info.did_hit = true;
+        hit_info.dst = dst;
+        hit_info.hit_point = hit_point;
+        hit_info.normal = glm::normalize(sphereCenter - hit_point); 
+
+    }
+    return hit_info;
+}
+
+//run for every pixel in display
+
+
+
+
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+
 
 class Camera{
     public:
         bool firstClick = true;
-        float fyaw = 0;
         float fpitch = 0;
         int width = 0;
         int height = 0;
@@ -29,21 +67,18 @@ class Camera{
         glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
         glm::vec3 Orientation = glm::vec3(0.0f, 0.0f, -1.0f);
         glm::mat4 view;
-        glm::mat4 model = glm::mat4(1.0f);
         const float radius = 10.0f;
         float camX = sin(glfwGetTime()) * radius;
         float camZ = cos(glfwGetTime()) * radius;
         const float sensitivity = 100.0f;
-        const float cameraSpeed = 0.005f; // adjust accordingly
+        const float cameraSpeed = 0.005f; 
 
-        Camera(int w, int h):width(w), height(h) {
-            // view = glm::lookAt(cameraPos, cameraPos + Orientation, cameraUp);
-        }
+        Camera(int w, int h):width(w), height(h) {}
 
-        void move(float FOVdeg, float near_plane, float far_plane, GLuint& shader, const char* uniform){
+        void move(float FOVdeg, float near_plane, float far_plane, GLuint& shader, const char* uniform, glm::mat4 model){
             view = glm::lookAt(cameraPos, cameraPos + Orientation, cameraUp);
             glm::mat4 projection  = glm::perspective(glm::radians(FOVdeg), (float)(width/height), near_plane, far_plane);
-            glUniformMatrix4fv(glGetUniformLocation(shader, uniform), 1, GL_FALSE, glm::value_ptr(projection * view));
+            glUniformMatrix4fv(glGetUniformLocation(shader, uniform), 1, GL_FALSE, glm::value_ptr(projection * view * model));
         }
         void process_inputs(GLFWwindow *window)
         {
@@ -57,12 +92,7 @@ class Camera{
             if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
                 cameraPos += glm::normalize(glm::cross(Orientation, cameraUp)) * cameraSpeed;
 
-            //rotate
-            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-                fyaw += 2;
-            if (glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS)
-                fyaw -= 2;
-
+            
         if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
         {
             // Hides mouse cursor
@@ -123,7 +153,6 @@ class Sphere{
         int radius = 1;
         float PI = 3.14;
 
-
         float x, y, z, xy;                              // vertex position
         float nx, ny, nz, lengthInv = 1.0f / radius;    // vertex normal
 
@@ -175,9 +204,7 @@ class Sphere{
 
                 }
             }
-        }
-
-       
+        }       
 
     private:
 
@@ -189,7 +216,6 @@ const char* vertexShaderSource = R"(
 layout (location = 0) in vec3 aPos;
 
 uniform mat4 camMatrix;
-
 
 void main()
 {
@@ -258,14 +284,24 @@ int main() {
         return -1;
     }
 
+    glm::mat4 model = glm::mat4(1.0f);
+    glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,0.0f);
+    model = glm::translate(model, sphereCenter);
     Sphere sphere(30,30);
-    Camera camera(1400,800);
+    
+    sphereCenter =  glm::vec3(2.0f,2.0f,2.0f);
+    glm::mat4 model_2 = glm::mat4(1.0f);
+    model_2 = glm::translate(model_2, sphereCenter);
+    model_2 = glm::scale(model_2, glm::vec3(1.0f,1.0f,1.0f)); 
+    Sphere light_source(30,30);
+
+    Camera camera(1200,1200);
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(1400, 800, "OpenGL Window", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(1200, 1200, "OpenGL Window", NULL, NULL);
     if (!window) {
         glfwTerminate();
         return -1;
@@ -296,7 +332,22 @@ int main() {
     unsigned int EBO;
     glGenBuffers(1, &EBO);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphere.indices.size()*sizeof(float), sphere.indices.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphere.indices.size()*sizeof(unsigned int), sphere.indices.data(), GL_STATIC_DRAW);
+
+
+    GLuint VAO_1, VBO_1;
+    glGenVertexArrays(1, &VAO_1);
+    glGenBuffers(1, &VBO_1);
+
+    glBindVertexArray(VAO_1);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO_1);
+    glBufferData(GL_ARRAY_BUFFER, light_source.vertices.size()* sizeof(float), light_source.vertices.data(), GL_STATIC_DRAW);
+
+
+    unsigned int EBO_1;
+    glGenBuffers(1, &EBO_1);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO_1);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, light_source.indices.size()*sizeof(unsigned int), light_source.indices.data(), GL_STATIC_DRAW);
 
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
@@ -310,11 +361,36 @@ int main() {
         glBindVertexArray(VAO);
         // glDrawArrays(GL_POINTS, 0, vertexCount);
         camera.process_inputs(window);
-        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix");
-        glDrawElements(GL_TRIANGLES, 
-               sphere.indices.size(),           
-               GL_UNSIGNED_INT, // type of indices in EBO
-               0);           // offset in the EBO
+        // camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model);
+
+        // glBindVertexArray(VAO_1);
+        // camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model_2);
+
+        // glDrawElements(GL_TRIANGLES, 
+        //        sphere.indices.size(),           
+        //        GL_UNSIGNED_INT, // type of indices in EBO
+        //        0);           // offset in the EBO
+
+        // glDrawElements(GL_TRIANGLES, 
+        //        light_source.indices.size(),           
+        //        GL_UNSIGNED_INT, // type of indices in EBO
+        //        0);           // offset in the EBO
+
+
+
+        // --- Draw Sphere 1 ---
+        glm::mat4 model1 = glm::mat4(1.0f);
+        model1 = glm::translate(model1, sphere1_position);
+        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model1);
+        glDrawElements(GL_TRIANGLES,  sphere.indices.size(), GL_UNSIGNED_INT, 0);
+
+        // --- Draw Sphere 2 ---
+        glm::mat4 model2 = glm::mat4(1.0f);
+        model2 = glm::translate(model2 ,glm::vec3(2.0f,2.0f,2.0f));
+        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model2);
+        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
+
+        glBindVertexArray(0);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -336,153 +412,3 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
 
 
 
-
-
-
-
-// ?dsfsdfsdfdsf
-
-
-
-
-// #include <iostream>
-// #include <GL/glew.h>
-// #include <GLFW/glfw3.h>
-
-// void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-// void processInput(GLFWwindow *window);
-
-// // Window dimensions
-// const unsigned int SCR_WIDTH = 800;
-// const unsigned int SCR_HEIGHT = 600;
-
-// int main()
-// {
-//     // 1. Initialize GLFW
-//     if (!glfwInit())
-//     {
-//         std::cerr << "Failed to initialize GLFW" << std::endl;
-//         return -1;
-//     }
-    
-//     // Optional: Configure OpenGL version (e.g., OpenGL 3.3 Core Profile)
-//     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-//     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-//     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-//     // 2. Create a windowed mode window and its OpenGL context
-//     GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LearnOpenGL", NULL, NULL);
-//     if (window == NULL)
-//     {
-//         std::cerr << "Failed to create GLFW window" << std::endl;
-//         glfwTerminate();
-//         return -1;
-//     }
-//     glfwMakeContextCurrent(window);
-//     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-
-//     // 3. Initialize GLEW/GLAD (load all OpenGL function pointers)
-//     // Note: If using GLAD, replace this with gladLoadGL(glfwGetProcAddress)
-//     if (glewInit() != GLEW_OK) {
-//         std::cerr << "Failed to initialize GLEW" << std::endl;
-//         return -1;
-//     }    
-
-//     // 4. Render loop
-//     while (!glfwWindowShouldClose(window))
-//     {
-//         // Input processing
-//         processInput(window);
-
-//         // Rendering commands here
-//         glClearColor(0.2f, 0.3f, 0.3f, 1.0f); // Set background color
-//         glClear(GL_COLOR_BUFFER_BIT); // Clear the color buffer
-
-//         // Swap front and back buffers and poll for events
-//         glfwSwapBuffers(window);
-//         glfwPollEvents();
-//     }
-
-//     // 5. Terminate GLFW and clean up
-//     glfwTerminate();
-//     return 0;
-// }
-
-// // Function to handle all input
-// void processInput(GLFWwindow *window)
-// {
-//     // Close window if Escape key is pressed
-//     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-//         glfwSetWindowShouldClose(window, true);
-// }
-
-
-// ????????????????????????????????????????
-
-
-// int main() {
-//     Initialize GLFW
-//     Sphere sphere(30,30);
-//     unsigned int VBO, VAO;
-//     glGenVertexArrays(1, &VAO);
-//     glGenBuffers(1, &VBO);
-
-//     // Bind the VAO first
-//     glBindVertexArray(VAO);
-
-//     // Bind the VBO and copy the vertex data into it
-//     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-//         float vertices[] = {
-//         -0.5f, -0.5f, 0.0f,
-//          0.5f, -0.5f, 0.0f,
-//          0.0f,  0.5f, 0.0f
-//     };
-//     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-//     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-//     glEnableVertexAttribArray(0);
-
-//     // Color attribute (location = 1 in shader)
-//     // The offset is 3 * sizeof(float) because color data starts after position data (3 floats)
-//     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-//     glEnableVertexAttribArray(1);
-
-//     // Use the shader program
-//     glUseProgram(shaderProgram);
-
-
-//     if (!glfwInit()) {
-//         return -1;
-//     }
-//     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-//     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-//     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-//     // Create a windowed mode window and its OpenGL context
-//     GLFWwindow* window = glfwCreateWindow(800, 600, "OpenGL Project", NULL, NULL);
-//     if (!window) {
-//         glfwTerminate();
-//         return -1;
-//     }
-//     glfwMakeContextCurrent(window);
-//     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-
-   
-
-//     // Render loop
-//     while (!glfwWindowShouldClose(window)) {
-//         // Render commands
-//         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-//         glClear(GL_COLOR_BUFFER_BIT);
-
-//         glBindVertexArray(VAO); 
-//         glDrawArrays(GL_TRIANGLES, 0, 3);
-
-//         // Swap buffers and poll IO events
-//         glfwSwapBuffers(window);
-//         glfwPollEvents();
-//     }
-
-//     glfwTerminate();
-//     return 0;
-// }
