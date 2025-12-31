@@ -37,17 +37,15 @@ HitInfo RaySphere(Ray ray,  float sphereCenter, float sphereRadius){
 
     if(discrim >= 0){
         float dst = (-1*b - std::sqrt(discrim))/(2*a);
-        glm::vec3 hit_point = ray.origin + (dst*ray.dir);
         hit_info.did_hit = true;
         hit_info.dst = dst;
-        hit_info.hit_point = hit_point;
-        hit_info.normal = glm::normalize(sphereCenter - hit_point); 
+        hit_info.hit_point = ray.origin + (dst*ray.dir);
+        hit_info.normal = glm::normalize(sphereCenter - hit_info.hit_point); 
 
     }
     return hit_info;
 }
 
-//run for every pixel in display
 
 
 
@@ -67,18 +65,49 @@ class Camera{
         glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
         glm::vec3 Orientation = glm::vec3(0.0f, 0.0f, -1.0f);
         glm::mat4 view;
+        glm::vec4 viewport; 
+        glm::mat4 projection; 
         const float radius = 10.0f;
         float camX = sin(glfwGetTime()) * radius;
         float camZ = cos(glfwGetTime()) * radius;
         const float sensitivity = 100.0f;
         const float cameraSpeed = 0.005f; 
 
-        Camera(int w, int h):width(w), height(h) {}
-
-        void move(float FOVdeg, float near_plane, float far_plane, GLuint& shader, const char* uniform, glm::mat4 model){
+        Camera(int w, int h, float FOVdeg, float near_plane, float far_plane):width(w), height(h) {
+            viewport = glm::vec4 (0, 0, width, height); 
             view = glm::lookAt(cameraPos, cameraPos + Orientation, cameraUp);
-            glm::mat4 projection  = glm::perspective(glm::radians(FOVdeg), (float)(width/height), near_plane, far_plane);
+            projection  = glm::perspective(glm::radians(FOVdeg), (float)(width/height), near_plane, far_plane);
+        }
+        void move(float FOVdeg, float near_plane, float far_plane, GLuint& shader, const char* uniform, const char* uniform2, glm::mat4 model){
+            view = glm::lookAt(cameraPos, cameraPos + Orientation, cameraUp);
+            // projection  = glm::perspective(glm::radians(FOVdeg), (float)(width/height), near_plane, far_plane);
             glUniformMatrix4fv(glGetUniformLocation(shader, uniform), 1, GL_FALSE, glm::value_ptr(projection * view * model));
+            glUniformMatrix4fv(glGetUniformLocation(shader, uniform2), 1, GL_FALSE, glm::value_ptr(model));
+
+        }
+
+        void check_ray_hits(){
+            for(int i{0}; i<height; i++){
+                for(int j{0}; j<width; j++){
+                    float winX = i;
+                    float winY = viewport[3] - j; // Invert Y coordinate   
+                    // Near plane (z = 0.0f)
+                    glm::vec3 rayStart = glm::unProject(
+                        glm::vec3(winX, winY, 0.0f), 
+                        view, projection, viewport
+                    );
+
+                    // Far plane (z = 1.0f)
+                    glm::vec3 rayEnd = glm::unProject(
+                        glm::vec3(winX, winY, 1.0f), 
+                        view, projection, viewport
+                    );
+                    Ray ray;
+                    ray.origin = cameraPos;
+                    ray.dir =  glm::normalize(rayEnd - rayStart); 
+                    bool did_hit = RaySphere(ray,0,1).did_hit;
+                }
+            }
         }
         void process_inputs(GLFWwindow *window)
         {
@@ -152,12 +181,14 @@ class Sphere{
         int sectorCount = 5;
         int radius = 1;
         float PI = 3.14;
+        char color[3]; 
 
         float x, y, z, xy;                              // vertex position
         float nx, ny, nz, lengthInv = 1.0f / radius;    // vertex normal
 
-        Sphere(int stack_c, int sector_c):stackCount(stack_c), sectorCount(sector_c){ 
+        Sphere(int stack_c, int sector_c, char* RGB):stackCount(stack_c), sectorCount(sector_c), color(RGB){ 
             calculate_vertices_normals();
+            
         }
 
         void calculate_vertices_normals(){
@@ -215,10 +246,13 @@ const char* vertexShaderSource = R"(
 #version 330 core
 layout (location = 0) in vec3 aPos;
 
+uniform mat4 model;
 uniform mat4 camMatrix;
+out vec3 FragPos;
 
 void main()
 {
+    FragPos = vec3(model * vec4(aPos, 1.0)); 
     gl_Position = camMatrix * vec4(aPos, 1.0);
 }
 )";
@@ -228,10 +262,44 @@ const char* fragmentShaderSource = R"(
 #version 330 core
 out vec4 FragColor;
 
+in vec3 FragPos; // Assuming you pass the fragment position or similar data for the ray calculation
+
+// Define sphere properties (you would pass these in as uniforms)
+uniform vec3 u_SphereCenter;
+uniform float u_SphereRadius;
+uniform vec3 u_RayOrigin; // e.g., camera position
+
 void main()
 {
-    FragColor = vec4(1.0, 0.5, 0.2, 1.0); // Orange color
+
+    // 1. Define the ray for the current fragment
+    // A simple ray can be formed from the camera position to the fragment position
+    vec3 rayDir = normalize(FragPos - u_RayOrigin);
+    vec3 rayOrigin = u_RayOrigin;
+
+    // 2. Perform the intersection calculation (simplified example)
+    vec3 oc = rayOrigin - u_SphereCenter;
+    float a = dot(rayDir, rayDir);
+    float b = 2.0 * dot(oc, rayDir);
+    float c = dot(oc, oc) - u_SphereRadius * u_SphereRadius;
+    float discriminant = b * b - 4.0 * a * c;
+
+    // 3. Control rendering based on the hit
+    if (discriminant < 0.0)
+    {
+        // No hit: Discard the fragment, preventing it from rendering
+        discard;
+    }
+    else
+    {
+        // Hit: The fragment is "kept" and will be rendered
+        // You can calculate the hit point here and apply shading/coloring
+        
+        // Example coloring: red for a hit
+        FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    }
 }
+
 )";
 
 // Function to compile a shader
@@ -294,7 +362,7 @@ int main() {
     model_2 = glm::translate(model_2, sphereCenter);
     model_2 = glm::scale(model_2, glm::vec3(1.0f,1.0f,1.0f)); 
 
-    Camera camera(1200,1200);
+    Camera camera(1200,1200,45.0f, 0.1f, 100.0f);
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -344,7 +412,7 @@ int main() {
         glUseProgram(shaderProgram);
         glBindVertexArray(VAO);
         camera.process_inputs(window);
-        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model);
+        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", "move", model);s
 
         glDrawElements(GL_TRIANGLES, 
                sphere.indices.size(),           
@@ -352,7 +420,7 @@ int main() {
                0);           // offset in the EBO
 
         // glBindVertexArray(VAO);
-        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", model_2);
+        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", "move", model_2);
 
         //render light_source
         glDrawElements(GL_TRIANGLES, 
