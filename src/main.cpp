@@ -13,9 +13,21 @@
 #include <glm/gtx/vector_angle.hpp>
 #include <glm/trigonometric.hpp>
 
+
+struct RayTracingMaterial{
+    glm::vec4 colour;
+    glm::vec4 emissionColour;
+    glm::vec4 specularColour;
+    float emissionStrength;
+    float smoothness;
+    float specularProbability;
+    int flag;
+}
+
+
 struct SphereSmall {
     glm::vec3 position;
-    glm::vec4 material;
+    RayTracingMaterial material;
     int radius;
 };
 
@@ -56,6 +68,32 @@ HitInfo RaySphere(Ray ray,  float sphereCenter, float sphereRadius){
 
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+
+void create_spheres(const std::vector<Sphere>& sphereObjects, GLuint& sphereSSBO, GLuint shaderProgram) {
+    std::vector<SphereSmall> spheres;    
+    for (const auto& obj : sphereObjects) {
+        spheres.push_back({
+            obj.position,
+            obj.material,
+            obj.radius
+        });
+    }
+
+    // 2. Generate and populate the SSBO
+    if (sphereSSBO == 0) glGenBuffers(1, &sphereSSBO);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, sphereSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, spheres.size() * sizeof(Sphere), spheres.data(), GL_STATIC_DRAW);
+    
+    // 3. Bind to the specific binding point (matches "binding = 0" in GLSL)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sphereSSBO);
+
+    // 4. Send the count as a standard uniform
+    glUseProgram(shaderProgram);
+    glUniform1i(glGetUniformLocation(shaderProgram, "NumSpheres"), (int)spheres.size());
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
 
 
 class Camera{
@@ -185,14 +223,14 @@ class Sphere{
         int stackCount = 5;
         int sectorCount = 5;
         glm::vec3 position;
-        glm::vec4 material;
+        RayTracingMaterial material;
         int radius = 1;
         float PI = 3.14;
 
         float x, y, z, xy;                              // vertex position
         float nx, ny, nz, lengthInv = 1.0f / radius;    // vertex normal
 
-        Sphere(int stack_c, int sector_c, glm::vec3 position_, glm::vec3 material_, int radius_):stackCount(stack_c), sectorCount(sector_c), position(position_), material(material_), radius(radius_){}
+        Sphere(int stack_c, int sector_c, glm::vec3 position_, RayTracingMaterial material_, int radius_):stackCount(stack_c), sectorCount(sector_c), position(position_), material(material_), radius(radius_){}
 
         void calculate_vertices_normals(){
             float sectorStep = 2 * PI / sectorCount;
@@ -263,50 +301,63 @@ void main()
 // Fragment Shader - determines pixel colors
 const char* fragmentShaderSource = R"(
 #version 330 core
+struct RayTracingMaterial
+{
+    vec4 colour;
+    vec4 emissionColour;
+    vec4 specularColour;
+    float emissionStrength;
+    float smoothness;
+    float specular Probability;
+    int flag;
+};
+
 struct Sphere {
     vec3 position;
-    float radius;
-    vec4 material;
+    int radius;
+    RayTracingMaterial material;
 };
+
 layout(std140, binding = 0) readonly SphereBuffer {
     Sphere spheres[]; 
-} objectBuffer;
+};
 uniform int NumSpheres;
 
 in vec3 FragPos; 
 
-uniform vec3 u_SphereCenter;
-uniform float u_SphereRadius;
-uniform vec3 u_RayOrigin; 
+vec3 u_SphereCenter;
+float u_SphereRadius;
+RayTracingu_SphereMaterial;
+vec3 u_RayOrigin; 
 
-
-
-struct MaterialInfo{
-    vec4 ambientColor = vec4(1.0, 0.0, 0.0, 1.0);
-
-}
 
 void main()
 {
+    for(int i=0; i < spheres.length(); i++){
+        u_SphereCenter = spheres.data[i].position;
+        u_SphereRadius = spheres.data[i].radius;
+        u_SphereMaterial = spheres.data[i].material;
 
-    vec3 rayDir = normalize(FragPos - u_RayOrigin);
-    vec3 rayOrigin = u_RayOrigin;
+        vec4 value = inputData.data[someIndex];
+        vec3 rayDir = normalize(FragPos - u_RayOrigin);
+        vec3 rayOrigin = u_RayOrigin;
 
-    vec3 oc = rayOrigin - u_SphereCenter;
-    float a = dot(rayDir, rayDir);
-    float b = 2.0 * dot(oc, rayDir);
-    float c = dot(oc, oc) - u_SphereRadius * u_SphereRadius;
-    float discriminant = b * b - 4.0 * a * c;
+        vec3 oc = rayOrigin - u_SphereCenter;
+        float a = dot(rayDir, rayDir);
+        float b = 2.0 * dot(oc, rayDir);
+        float c = dot(oc, oc) - u_SphereRadius * u_SphereRadius;
+        float discriminant = b * b - 4.0 * a * c;
 
-    if (discriminant < 0.0)
-    {
-        discard;
+        if (discriminant < 0.0)
+        {
+            discard;
+        }
+        else
+        {
+            FragColor = u_SphereMaterial.color;
+        }
     }
-    else
-    {
-
-        FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-    }
+   
 }
 
 )";
@@ -362,22 +413,40 @@ int main() {
     }
 
     std::vector<Sphere>sphere_arr;
-    glm::mat4 model = glm::mat4(1.0f);
-    glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,0.0f);
-    model = glm::translate(model, sphereCenter);
+    
+    RayTracingMaterial material;
+    material.colour = glm::vec4(255.0f,0.0f,0.0f,1.0f);
+    material.emissionColour = glm::vec4(255.0f,0.0f,0.0f,1.0f);
+    material.specularColour = glm::vec4(255.0f,0.0f,0.0f,1.0f);
+    material.emissionStrength =1.0f;
+    material.smoothness=1.0f;
+    material.specularProbability=1.0f;
+    material.flag =1;
 
-    Sphere sphere(30,30,sphereCenter,glm::vec4(0.0f,0.0f,0.0f,1.0f), 1);
-    sphere.calculate_vertices_normals();
-    // SphereSmall s_sphere_1;
-    // SphereSmall s_sphere_1.radius = sphere.radius;
-    // SphereSmall s_sphere_1.position = sphere.position; 
-    // SphereSmall s_sphere_1.material = sphere.material;
+    glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,0.0f);
+    Sphere sphere(30,30,sphereCenter,material, 1);
     sphere_arr.push_back(sphere);
 
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, sphereCenter);
+
+    sphere.calculate_vertices_normals();
+
+
     
+    RayTracingMaterial material2;
+    material2.colour = glm::vec4(255.0f,0.0f,0.0f,1.0f);
+    material2.emissionColour = glm::vec4(255.0f,0.0f,0.0f,1.0f);
+    material2.specularColour= glm::vec4(255.0f,0.0f,0.0f,1.0f);
+    material2.emissionStrength =1.0f;
+    material2.smoothness=1.0f;
+    material2.specularProbability=1.0f;
+    material2.flag =1;
+
     sphereCenter =  glm::vec3(2.0f,2.0f,2.0f);
-    Sphere sphere2(30,30,sphereCenter,glm::vec4(255.0f,0.0f,0.0f,1.0f), 2);
+    Sphere sphere2(30,30,sphereCenter,material2, 2);
     sphere_arr.push_back(sphere2);
+
     glm::mat4 model_2 = glm::mat4(1.0f);
     model_2 = glm::translate(model_2, sphereCenter);
     model_2 = glm::scale(model_2, glm::vec3(1.0f,1.0f,1.0f)); 
@@ -405,8 +474,9 @@ int main() {
 
     // Create shader program
     GLuint shaderProgram = createShaderProgram();
+    GLuint sphereSSBO = 0;
 
-    create_spheres();
+    create_spheres(sphere_arr, sphereSSBO,shaderProgram);
 
     GLuint VAO, VBO;
     glGenVertexArrays(1, &VAO);
@@ -434,10 +504,6 @@ int main() {
         glBindVertexArray(VAO);
         camera.process_inputs(window);
         camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", "move", model);
-        color[3] =  color_arr[0]; 
-        if (!color_arr.empty()) {
-            color_arr.erase(color_arr.begin());
-        }
         
         glDrawElements(GL_TRIANGLES, 
                sphere.indices.size(),           
@@ -470,32 +536,3 @@ int main() {
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
-
-
-void create_spheres(const std::vector<Sphere>& sphereObjects, GLuint& sphereSSBO, GLuint shaderProgram) {
-    std::vector<SphereSmall> spheres;    
-    for (const auto& obj : sphereObjects) {
-        spheres.push_back({
-            obj.position,
-            obj.material,
-            obj.radius
-        });
-    }
-
-    // 2. Generate and populate the SSBO
-    if (sphereSSBO == 0) glGenBuffers(1, &sphereSSBO);
-    
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, sphereSSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, spheres.size() * sizeof(Sphere), spheres.data(), GL_STATIC_DRAW);
-    
-    // 3. Bind to the specific binding point (matches "binding = 0" in GLSL)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sphereSSBO);
-
-    // 4. Send the count as a standard uniform
-    glUseProgram(shaderProgram);
-    glUniform1i(glGetUniformLocation(shaderProgram, "NumSpheres"), (int)spheres.size());
-    
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-}
-
-
