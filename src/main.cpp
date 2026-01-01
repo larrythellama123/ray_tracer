@@ -13,6 +13,12 @@
 #include <glm/gtx/vector_angle.hpp>
 #include <glm/trigonometric.hpp>
 
+struct SphereSmall {
+    glm::vec3 position;
+    glm::vec4 material;
+    int radius;
+};
+
 
 struct HitInfo{
     bool did_hit = false;
@@ -41,7 +47,6 @@ HitInfo RaySphere(Ray ray,  float sphereCenter, float sphereRadius){
         hit_info.dst = dst;
         hit_info.hit_point = ray.origin + (dst*ray.dir);
         hit_info.normal = glm::normalize(sphereCenter - hit_info.hit_point); 
-
     }
     return hit_info;
 }
@@ -179,17 +184,15 @@ class Sphere{
         std::vector<unsigned int> indices;
         int stackCount = 5;
         int sectorCount = 5;
+        glm::vec3 position;
+        glm::vec4 material;
         int radius = 1;
         float PI = 3.14;
-        char color[3]; 
 
         float x, y, z, xy;                              // vertex position
         float nx, ny, nz, lengthInv = 1.0f / radius;    // vertex normal
 
-        Sphere(int stack_c, int sector_c, char* RGB):stackCount(stack_c), sectorCount(sector_c), color(RGB){ 
-            calculate_vertices_normals();
-            
-        }
+        Sphere(int stack_c, int sector_c, glm::vec3 position_, glm::vec3 material_, int radius_):stackCount(stack_c), sectorCount(sector_c), position(position_), material(material_), radius(radius_){}
 
         void calculate_vertices_normals(){
             float sectorStep = 2 * PI / sectorCount;
@@ -260,42 +263,48 @@ void main()
 // Fragment Shader - determines pixel colors
 const char* fragmentShaderSource = R"(
 #version 330 core
-out vec4 FragColor;
+struct Sphere {
+    vec3 position;
+    float radius;
+    vec4 material;
+};
+layout(std140, binding = 0) readonly SphereBuffer {
+    Sphere spheres[]; 
+} objectBuffer;
+uniform int NumSpheres;
 
-in vec3 FragPos; // Assuming you pass the fragment position or similar data for the ray calculation
+in vec3 FragPos; 
 
-// Define sphere properties (you would pass these in as uniforms)
 uniform vec3 u_SphereCenter;
 uniform float u_SphereRadius;
-uniform vec3 u_RayOrigin; // e.g., camera position
+uniform vec3 u_RayOrigin; 
+
+
+
+struct MaterialInfo{
+    vec4 ambientColor = vec4(1.0, 0.0, 0.0, 1.0);
+
+}
 
 void main()
 {
 
-    // 1. Define the ray for the current fragment
-    // A simple ray can be formed from the camera position to the fragment position
     vec3 rayDir = normalize(FragPos - u_RayOrigin);
     vec3 rayOrigin = u_RayOrigin;
 
-    // 2. Perform the intersection calculation (simplified example)
     vec3 oc = rayOrigin - u_SphereCenter;
     float a = dot(rayDir, rayDir);
     float b = 2.0 * dot(oc, rayDir);
     float c = dot(oc, oc) - u_SphereRadius * u_SphereRadius;
     float discriminant = b * b - 4.0 * a * c;
 
-    // 3. Control rendering based on the hit
     if (discriminant < 0.0)
     {
-        // No hit: Discard the fragment, preventing it from rendering
         discard;
     }
     else
     {
-        // Hit: The fragment is "kept" and will be rendered
-        // You can calculate the hit point here and apply shading/coloring
-        
-        // Example coloring: red for a hit
+
         FragColor = vec4(1.0, 0.0, 0.0, 1.0);
     }
 }
@@ -352,12 +361,23 @@ int main() {
         return -1;
     }
 
+    std::vector<Sphere>sphere_arr;
     glm::mat4 model = glm::mat4(1.0f);
     glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,0.0f);
     model = glm::translate(model, sphereCenter);
-    Sphere sphere(30,30);
+
+    Sphere sphere(30,30,sphereCenter,glm::vec4(0.0f,0.0f,0.0f,1.0f), 1);
+    sphere.calculate_vertices_normals();
+    // SphereSmall s_sphere_1;
+    // SphereSmall s_sphere_1.radius = sphere.radius;
+    // SphereSmall s_sphere_1.position = sphere.position; 
+    // SphereSmall s_sphere_1.material = sphere.material;
+    sphere_arr.push_back(sphere);
+
     
     sphereCenter =  glm::vec3(2.0f,2.0f,2.0f);
+    Sphere sphere2(30,30,sphereCenter,glm::vec4(255.0f,0.0f,0.0f,1.0f), 2);
+    sphere_arr.push_back(sphere2);
     glm::mat4 model_2 = glm::mat4(1.0f);
     model_2 = glm::translate(model_2, sphereCenter);
     model_2 = glm::scale(model_2, glm::vec3(1.0f,1.0f,1.0f)); 
@@ -386,6 +406,7 @@ int main() {
     // Create shader program
     GLuint shaderProgram = createShaderProgram();
 
+    create_spheres();
 
     GLuint VAO, VBO;
     glGenVertexArrays(1, &VAO);
@@ -412,8 +433,12 @@ int main() {
         glUseProgram(shaderProgram);
         glBindVertexArray(VAO);
         camera.process_inputs(window);
-        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", "move", model);s
-
+        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", "move", model);
+        color[3] =  color_arr[0]; 
+        if (!color_arr.empty()) {
+            color_arr.erase(color_arr.begin());
+        }
+        
         glDrawElements(GL_TRIANGLES, 
                sphere.indices.size(),           
                GL_UNSIGNED_INT, // type of indices in EBO
@@ -447,5 +472,30 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
 }
 
 
+void create_spheres(const std::vector<Sphere>& sphereObjects, GLuint& sphereSSBO, GLuint shaderProgram) {
+    std::vector<SphereSmall> spheres;    
+    for (const auto& obj : sphereObjects) {
+        spheres.push_back({
+            obj.position,
+            obj.material,
+            obj.radius
+        });
+    }
+
+    // 2. Generate and populate the SSBO
+    if (sphereSSBO == 0) glGenBuffers(1, &sphereSSBO);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, sphereSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, spheres.size() * sizeof(Sphere), spheres.data(), GL_STATIC_DRAW);
+    
+    // 3. Bind to the specific binding point (matches "binding = 0" in GLSL)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sphereSSBO);
+
+    // 4. Send the count as a standard uniform
+    glUseProgram(shaderProgram);
+    glUniform1i(glGetUniformLocation(shaderProgram, "NumSpheres"), (int)spheres.size());
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
 
 
