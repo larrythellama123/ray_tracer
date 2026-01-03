@@ -26,9 +26,10 @@ struct RayTracingMaterial{
 
 
 struct SphereSmall {
-    glm::vec3 position;
+    glm::vec4 position;
+    float radius;
+    float padding[3];  
     RayTracingMaterial material;
-    int radius;
 };
 
 
@@ -98,10 +99,9 @@ class Camera{
         }
         void move(float FOVdeg, float near_plane, float far_plane, GLuint& shader, const char* uniform, const char* uniform2, glm::mat4 model){
             view = glm::lookAt(cameraPos, cameraPos + Orientation, cameraUp);
-            // projection  = glm::perspective(glm::radians(FOVdeg), (float)(width/height), near_plane, far_plane);
             glUniformMatrix4fv(glGetUniformLocation(shader, uniform), 1, GL_FALSE, glm::value_ptr(projection * view * model));
             glUniformMatrix4fv(glGetUniformLocation(shader, uniform2), 1, GL_FALSE, glm::value_ptr(model));
-            glUniform3fv(glGetUniformLocation(shader, "u_RayOrigin"), 1, glm::value_ptr(Orientation));
+            glUniform3fv(glGetUniformLocation(shader, "u_RayOrigin"), 1, glm::value_ptr(cameraPos));
 
         }
 
@@ -200,7 +200,7 @@ class Sphere{
         int sectorCount = 5;
         glm::vec3 position;
         RayTracingMaterial material;
-        int radius = 1;
+        float radius = 1;
         float PI = 3.14;
 
         float x, y, z, xy;                              // vertex position
@@ -264,21 +264,21 @@ void create_spheres(const std::vector<Sphere>& sphereObjects, GLuint& sphereSSBO
 const char* vertexShaderSource = R"(
 #version 430 core
 layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec2 aTexCoord;
 
-uniform mat4 model;
-uniform mat4 camMatrix;
-out vec3 FragPos;
+out vec2 TexCoord;
 
 void main()
 {
-    FragPos = vec3(model * vec4(aPos, 1.0)); 
-    gl_Position = camMatrix * vec4(aPos, 1.0);
+    gl_Position = vec4(aPos, 1.0);
+    TexCoord = aTexCoord;
 }
 )";
 
 // Fragment Shader - determines pixel colors
 const char* fragmentShaderSource = R"(
 #version 430 core
+
 struct RayTracingMaterial
 {
     vec4 colour;
@@ -290,56 +290,100 @@ struct RayTracingMaterial
     int flag;
 };
 
+
+struct HitInfo{
+    bool did_hit;
+    float dst;
+    vec3 hit_point;
+    vec3 normal;
+};
+
+struct Ray{
+    vec3 origin;
+    vec3 dir;
+};
+
+
+HitInfo RaySphere(Ray ray,  vec3 sphereCenter, float sphereRadius){
+    HitInfo hit_info;
+    hit_info.did_hit = false;
+    hit_info.dst = 1e10;
+    hit_info.hit_point = vec3(1.0,1.0,1.0);
+    hit_info.normal = vec3(1.0,1.0,1.0);
+
+    vec3 offset_ray_origin = ray.origin - sphereCenter;
+    float a  = dot(ray.dir,ray.dir);
+    float b = 2 * dot(offset_ray_origin,ray.dir);
+    float c = dot(offset_ray_origin,offset_ray_origin) - sphereRadius*sphereRadius;
+    float discrim = b*b - 4*a*c;
+
+    if(discrim >= 0){
+        float dst = (-b - sqrt(discrim))/(2*a);
+        if (dst > 0.0) {
+            hit_info.did_hit = true;
+            hit_info.dst = dst;
+            hit_info.hit_point = ray.origin + dst * ray.dir;
+            hit_info.normal = normalize(hit_info.hit_point - sphereCenter);
+        }
+    }
+
+    return hit_info;
+};
+
+
 struct Sphere {
-    vec3 position;
-    int radius;
+    vec4 position;
+    float radius;
+    float padding[3];  
     RayTracingMaterial material;
 };
 
 layout(std430, binding = 0) readonly buffer SphereBuffer {
     Sphere spheres[]; 
 };
-uniform int NumSpheres;
-uniform vec3 u_RayOrigin; 
-
-
-in vec3 FragPos; 
 out vec4 FragColor;
 
-vec3 u_SphereCenter;
-float u_SphereRadius;
-RayTracingMaterial u_SphereMaterial;
-bool hit = false;
-float distance = 0.0;
+
+
+uniform vec3 u_RayOrigin;
+uniform vec3 u_CameraOrientation;
+uniform vec2 u_Resolution;
+uniform mat4 view;
+uniform mat4 projection;
+
+in vec2 TexCoord;
 
 void main()
 {
-    for(int i=0; i < spheres.length(); i++){
-        u_SphereCenter = spheres[i].position;
+    vec2 uv = TexCoord * 2.0 - 1.0;
+
+    // Calculate ray direction based on camera
+    vec4 target = inverse(projection) * vec4(uv.x, uv.y, 1.0, 1.0);
+    vec3 rayDir = vec3(inverse(view) * vec4(normalize(vec3(target) / target.w), 0.0));
+
+    vec3 u_SphereCenter;
+    float u_SphereRadius;
+    RayTracingMaterial u_SphereMaterial;
+    Ray ray;
+    ray.origin = u_RayOrigin;
+    ray.dir = normalize(rayDir);
+
+    float distance = 1e10;
+    vec4 colour = vec4(0.2, 0.3, 0.3, 1.0);
+
+    for(int i=0; i < spheres.length(); ++i){
+        u_SphereCenter = vec3(spheres[i].position);
         u_SphereRadius = spheres[i].radius;
         u_SphereMaterial = spheres[i].material;
 
-        vec3 rayDir = normalize(FragPos - u_RayOrigin);
-        vec3 rayOrigin = u_RayOrigin;
-
-        vec3 oc = rayOrigin - u_SphereCenter;
-        float a = dot(rayDir, rayDir);
-        float b = 2.0 * dot(oc, rayDir);
-        float c = dot(oc, oc) - u_SphereRadius * u_SphereRadius;
-        float discriminant = b * b - 4.0 * a * c;
-
-        if (discriminant >= 0.0)
-        {
-            hit = true;
-            break;
-        }
+        HitInfo hit_info = RaySphere(ray,  u_SphereCenter, u_SphereRadius);
+        if(hit_info.did_hit && hit_info.dst<distance){
+            distance = hit_info.dst;
+            colour =  u_SphereMaterial.colour;
+        }        
     }
-    if(hit){
-        FragColor = u_SphereMaterial.colour;
-    }
-    else{
-        discard;
-    }
+    FragColor = colour;
+    
    
 }
 
@@ -398,7 +442,7 @@ int main() {
     std::vector<Sphere>sphere_arr;
     
     RayTracingMaterial material;
-    material.colour = glm::vec4(0.0f,1.0f,0.0f,1.0f);
+    material.colour = glm::vec4(1.0f,0.0f,0.0f,1.0f);
     material.emissionColour = glm::vec4(0.0f,1.0f,0.0f,1.0f);
     material.specularColour = glm::vec4(0.0f,1.0f,0.0f,1.0f);
     material.emissionStrength =1.0f;
@@ -406,19 +450,15 @@ int main() {
     material.specularProbability=1.0f;
     material.flag =1;
 
-    glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,0.0f);
-    Sphere sphere(30,30,sphereCenter,material, 1);
+    glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,-3.0f);
+    Sphere sphere(30,30,sphereCenter,material, 1.0f);
     sphere_arr.push_back(sphere);
 
-    glm::mat4 model = glm::mat4(1.0f);
-    model = glm::translate(model, sphereCenter);
-
-    sphere.calculate_vertices_normals();
 
 
     
     RayTracingMaterial material2;
-    material2.colour = glm::vec4(1.0f,0.0f,0.0f,1.0f);
+    material2.colour = glm::vec4(0.0f,0.0f,0.0f,1.0f);
     material2.emissionColour = glm::vec4(1.0f,0.0f,0.0f,1.0f);
     material2.specularColour= glm::vec4(1.0f,0.0f,0.0f,1.0f);
     material2.emissionStrength =1.0f;
@@ -426,13 +466,8 @@ int main() {
     material2.specularProbability=1.0f;
     material2.flag =1;
 
-    sphereCenter =  glm::vec3(2.0f,2.0f,2.0f);
-    Sphere sphere2(30,30,sphereCenter,material2, 1);
+    Sphere sphere2(30,30, glm::vec3(1.0f,1.0f,-3.0f),material2, 1.0f);
     sphere_arr.push_back(sphere2);
-
-    glm::mat4 model_2 = glm::mat4(1.0f);
-    model_2 = glm::translate(model_2, sphereCenter);
-    model_2 = glm::scale(model_2, glm::vec3(1.0f,1.0f,1.0f)); 
 
     Camera camera(1200,1200,45.0f, 0.1f, 100.0f);
 
@@ -461,22 +496,30 @@ int main() {
 
     create_spheres(sphere_arr, sphereSSBO,shaderProgram);
 
+    // Create fullscreen quad (covers entire screen in NDC coordinates)
+    float quadVertices[] = {
+        // positions        // texture coords
+        -1.0f,  1.0f, 0.0f,  0.0f, 1.0f,  // top-left
+        -1.0f, -1.0f, 0.0f,  0.0f, 0.0f,  // bottom-left
+         1.0f,  1.0f, 0.0f,  1.0f, 1.0f,  // top-right
+         1.0f, -1.0f, 0.0f,  1.0f, 0.0f   // bottom-right
+    };
+
     GLuint VAO, VBO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
 
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sphere.vertices.size()* sizeof(float), sphere.vertices.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
 
-
-    unsigned int EBO;
-    glGenBuffers(1, &EBO);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphere.indices.size()*sizeof(unsigned int), sphere.indices.data(), GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    // Position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+    
+    // Texture coord attribute (if needed)
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
 
 
     // Render loop
@@ -485,23 +528,17 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT);
         glUseProgram(shaderProgram);
         glBindVertexArray(VAO);
-        camera.process_inputs(window);
-        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", "model", model);
+        camera.process_inputs(window);  
+        camera.view = glm::lookAt(camera.cameraPos, camera.cameraPos + camera.Orientation, camera.cameraUp);
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(camera.view));
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(camera.projection));
+        glUniform3fv(glGetUniformLocation(shaderProgram, "u_RayOrigin"), 1, glm::value_ptr(camera.cameraPos));
+        glUniform3fv(glGetUniformLocation(shaderProgram, "u_CameraOrientation"), 1, glm::value_ptr(camera.Orientation));
+        glUniform2f(glGetUniformLocation(shaderProgram, "u_Resolution"), 1200.0f, 1200.0f);
+
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+      
         
-        glDrawElements(GL_TRIANGLES, 
-               sphere.indices.size(),           
-               GL_UNSIGNED_INT, // type of indices in EBO
-               0);           // offset in the EBO
-
-        // glBindVertexArray(VAO);
-        camera.move(45.0f, 0.1f, 100.0f, shaderProgram, "camMatrix", "model", model_2);
-
-        //render light_source
-        glDrawElements(GL_TRIANGLES, 
-               sphere.indices.size(),           
-               GL_UNSIGNED_INT, // type of indices in EBO
-               0);           // offset in the EBO
-
         glBindVertexArray(0);
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -511,39 +548,36 @@ int main() {
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     glDeleteProgram(shaderProgram);
-
     glfwTerminate();
     return 0;
 }
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
-}
-
+};
 
 void create_spheres(const std::vector<Sphere>& sphereObjects, GLuint& sphereSSBO, GLuint shaderProgram) {
-    std::vector<SphereSmall> spheres;    
+    std::vector<SphereSmall> spheres;   
     for (const auto& obj : sphereObjects) {
-
-        spheres.push_back({
-            obj.position,
-            obj.material,
-            obj.radius
-        });
+        SphereSmall s;
+        s.position = glm::vec4(obj.position, 1.0f);
+        s.radius = obj.radius;
+        s.padding[0] = 0.0f;
+        s.padding[1] = 0.0f;
+        s.padding[2] = 0.0f;
+        s.material = obj.material;
+        
+        spheres.push_back(s);
     }
 
-    // 2. Generate and populate the SSBO
     if (sphereSSBO == 0) glGenBuffers(1, &sphereSSBO);
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, sphereSSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, spheres.size() * sizeof(Sphere), spheres.data(), GL_STATIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, spheres.size() * sizeof(SphereSmall), 
+                 spheres.data(), GL_STATIC_DRAW);
     
-    // 3. Bind to the specific binding point (matches "binding = 0" in GLSL)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sphereSSBO);
-
-    // 4. Send the count as a standard uniform
     glUseProgram(shaderProgram);
     glUniform1i(glGetUniformLocation(shaderProgram, "NumSpheres"), (int)spheres.size());
-    
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
