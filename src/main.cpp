@@ -14,6 +14,11 @@
 #include <glm/trigonometric.hpp>
 
 
+#define LIGHT_SOURCE 2
+// ability to change emission strength of light source
+//  ability to show soft colours of neighboring objects on the other objects
+
+
 struct RayTracingMaterial{
     glm::vec4 colour;
     glm::vec4 emissionColour;
@@ -279,6 +284,21 @@ void main()
 const char* fragmentShaderSource = R"(
 #version 430 core
 
+
+out vec4 FragColor;
+
+uniform vec3 u_RayOrigin;
+uniform vec3 u_CameraOrientation;
+uniform vec2 u_Resolution;
+uniform mat4 view;
+uniform mat4 projection;
+
+in vec2 TexCoord;
+int Frame;
+int maxBounceCount = 100;
+
+#define LIGHT_SOURCE 2
+
 struct RayTracingMaterial
 {
     vec4 colour;
@@ -290,12 +310,25 @@ struct RayTracingMaterial
     int flag;
 };
 
+struct Sphere {
+    vec4 position;
+    float radius;
+    float padding[3];  
+    RayTracingMaterial material;
+};
+layout(std430, binding = 0) readonly buffer SphereBuffer {
+    Sphere spheres[]; 
+};
+
+
+
 
 struct HitInfo{
     bool did_hit;
     float dst;
     vec3 hit_point;
     vec3 normal;
+    RayTracingMaterial material;
 };
 
 struct Ray{
@@ -304,7 +337,40 @@ struct Ray{
 };
 
 
-HitInfo RaySphere(Ray ray,  vec3 sphereCenter, float sphereRadius){
+int NextRandom(int state)
+{
+    state = state * 747796405 + 2891336453;
+    int result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
+    result = (result >> 22) ^ result;
+    return result;
+}
+
+float RandomValue(int state)
+{
+    return NextRandom(state) / 4294967295.0; 
+}
+
+// Random value in normal distribution (with mean=0 and sd=1)
+float RandomValueNormalDistribution(int state)
+{
+    float theta = 2 * 3.1415926 * RandomValue(state);
+    float rho = sqrt(-2 * log(RandomValue(state)));
+    return rho * cos(theta);
+}
+
+
+vec3 RandomDirectionHemisphere(vec3 normal, int state){
+    float x  = RandomValueNormalDistribution(state);
+    float y  = RandomValueNormalDistribution(state);
+    float z  = RandomValueNormalDistribution(state);
+    if (dot(normal,vec3(x,y,z))<0){
+        return -1*vec3(x,y,z);
+    }
+    return vec3(x,y,z);
+}
+
+
+HitInfo RaySphere(Ray ray,  vec3 sphereCenter, float sphereRadius, RayTracingMaterial material){
     HitInfo hit_info;
     hit_info.did_hit = false;
     hit_info.dst = 1e10;
@@ -324,50 +390,34 @@ HitInfo RaySphere(Ray ray,  vec3 sphereCenter, float sphereRadius){
             hit_info.dst = dst;
             hit_info.hit_point = ray.origin + dst * ray.dir;
             hit_info.normal = normalize(hit_info.hit_point - sphereCenter);
+            hit_info.material = material;
         }
     }
 
     return hit_info;
 };
 
+vec4 GetEnvironmentLight(Ray ray){
+    vec4 emitted_light = vec4(0.0, 0.0, 0.0, 0.0);
+    for(int i=0; i < spheres.length(); ++i){
+        if(spheres[i].material.flag != LIGHT_SOURCE){
+            continue;
+        }
+        HitInfo hit_info = RaySphere(ray, vec3(spheres[i].position), spheres[i].radius,spheres[i].material);
+        if(hit_info.did_hit){
+            emitted_light =  spheres[i].material.emissionColour * spheres[i].material.emissionStrength;
+        }        
+    }
+    return emitted_light;
+}
 
-struct Sphere {
-    vec4 position;
-    float radius;
-    float padding[3];  
-    RayTracingMaterial material;
-};
 
-layout(std430, binding = 0) readonly buffer SphereBuffer {
-    Sphere spheres[]; 
-};
-out vec4 FragColor;
-
-
-
-uniform vec3 u_RayOrigin;
-uniform vec3 u_CameraOrientation;
-uniform vec2 u_Resolution;
-uniform mat4 view;
-uniform mat4 projection;
-
-in vec2 TexCoord;
-
-void main()
-{
-    vec2 uv = TexCoord * 2.0 - 1.0;
-
-    // Calculate ray direction based on camera
-    vec4 target = inverse(projection) * vec4(uv.x, uv.y, 1.0, 1.0);
-    vec3 rayDir = vec3(inverse(view) * vec4(normalize(vec3(target) / target.w), 0.0));
-
+HitInfo CalculateRayCollision(Ray ray){
     vec3 u_SphereCenter;
     float u_SphereRadius;
     RayTracingMaterial u_SphereMaterial;
-    Ray ray;
-    ray.origin = u_RayOrigin;
-    ray.dir = normalize(rayDir);
 
+    HitInfo closest_hit_info;
     float distance = 1e10;
     vec4 colour = vec4(0.2, 0.3, 0.3, 1.0);
 
@@ -376,15 +426,64 @@ void main()
         u_SphereRadius = spheres[i].radius;
         u_SphereMaterial = spheres[i].material;
 
-        HitInfo hit_info = RaySphere(ray,  u_SphereCenter, u_SphereRadius);
+        HitInfo hit_info = RaySphere(ray,  u_SphereCenter, u_SphereRadius,  u_SphereMaterial);
         if(hit_info.did_hit && hit_info.dst<distance){
             distance = hit_info.dst;
-            colour =  u_SphereMaterial.colour;
+            closest_hit_info = hit_info;
         }        
     }
-    FragColor = colour;
+    return closest_hit_info;
+}
+
+
+vec4 Trace(){
+    vec2 uv = TexCoord * 2.0 - 1.0;
+    vec2 pixelCoord = TexCoord * u_Resolution;
+    int pixelIndex = int(pixelCoord.y + pixelCoord.x * u_Resolution.x);
+    int state = pixelIndex + Frame * 719393;
+
+    vec4 incoming_light = vec4(0.0f,0.0f,0.0f,0.0f);
+    vec4 ray_color = vec4(1.0f,1.0f,1.0f,1.0f);
+
+    vec4 target = inverse(projection) * vec4(uv.x, uv.y, 1.0, 1.0);
+    vec3 rayDir = vec3(inverse(view) * vec4(normalize(vec3(target) / target.w), 0.0));
     
-   
+    Ray ray;
+    ray.origin = u_RayOrigin;
+    ray.dir = normalize(rayDir);
+
+    int count = 0;
+    while(count< maxBounceCount){
+        HitInfo hit_info = CalculateRayCollision(ray);
+        if(hit_info.did_hit){
+            RayTracingMaterial material  = hit_info.material;
+            // if(material.flag == LIGHT_SOURCE){
+            //     continue;
+            // }
+            ray.origin = hit_info.hit_point;
+            ray.dir = RandomDirectionHemisphere(hit_info.normal,state);
+            vec4 emitted_light = material.emissionColour * material.emissionStrength;
+            incoming_light += emitted_light * ray_color; 
+            ray_color *= material.colour;  
+        }
+        else{
+            incoming_light = GetEnvironmentLight(ray) * ray_color;
+            break;
+        }
+        count+=1;
+    }
+    return incoming_light;
+}
+
+
+
+
+
+
+
+void main()
+{
+    FragColor = Trace();
 }
 
 )";
@@ -458,15 +557,15 @@ int main() {
 
     
     RayTracingMaterial material2;
-    material2.colour = glm::vec4(0.0f,0.0f,0.0f,1.0f);
+    material2.colour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
     material2.emissionColour = glm::vec4(1.0f,0.0f,0.0f,1.0f);
     material2.specularColour= glm::vec4(1.0f,0.0f,0.0f,1.0f);
     material2.emissionStrength =1.0f;
     material2.smoothness=1.0f;
     material2.specularProbability=1.0f;
-    material2.flag =1;
+    material2.flag = LIGHT_SOURCE;
 
-    Sphere sphere2(30,30, glm::vec3(1.0f,1.0f,-3.0f),material2, 1.0f);
+    Sphere sphere2(30,30, glm::vec3(2.0f,2.0f,-3.0f),material2, 1.0f);
     sphere_arr.push_back(sphere2);
 
     Camera camera(1200,1200,45.0f, 0.1f, 100.0f);
