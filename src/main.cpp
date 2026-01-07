@@ -95,7 +95,7 @@ class Camera{
         float camX = sin(glfwGetTime()) * radius;
         float camZ = cos(glfwGetTime()) * radius;
         const float sensitivity = 100.0f;
-        const float cameraSpeed = 0.005f; 
+        const float cameraSpeed = 0.010f; 
 
         Camera(int w, int h, float FOVdeg, float near_plane, float far_plane):width(w), height(h) {
             viewport = glm::vec4 (0, 0, width, height); 
@@ -295,7 +295,7 @@ uniform mat4 projection;
 
 in vec2 TexCoord;
 int Frame;
-int maxBounceCount = 100;
+int maxBounceCount = 1;
 
 #define LIGHT_SOURCE 2
 
@@ -363,10 +363,8 @@ vec3 RandomDirectionHemisphere(vec3 normal, int state){
     float x  = RandomValueNormalDistribution(state);
     float y  = RandomValueNormalDistribution(state);
     float z  = RandomValueNormalDistribution(state);
-    if (dot(normal,vec3(x,y,z))<0){
-        return -1*vec3(x,y,z);
-    }
-    return vec3(x,y,z);
+    vec3 dir = normalize(vec3(x,y,z));
+    return dir* sign(dot(normal,dir));
 }
 
 
@@ -377,7 +375,7 @@ HitInfo RaySphere(Ray ray,  vec3 sphereCenter, float sphereRadius, RayTracingMat
     hit_info.hit_point = vec3(1.0,1.0,1.0);
     hit_info.normal = vec3(1.0,1.0,1.0);
 
-    vec3 offset_ray_origin = ray.origin - sphereCenter;
+    vec3 offset_ray_origin = ray.origin  - sphereCenter;
     float a  = dot(ray.dir,ray.dir);
     float b = 2 * dot(offset_ray_origin,ray.dir);
     float c = dot(offset_ray_origin,offset_ray_origin) - sphereRadius*sphereRadius;
@@ -457,26 +455,21 @@ vec4 Trace(){
         HitInfo hit_info = CalculateRayCollision(ray);
         if(hit_info.did_hit){
             RayTracingMaterial material  = hit_info.material;
-            // if(material.flag == LIGHT_SOURCE){
-            //     continue;
-            // }
+            if(count == 1 && material.flag == LIGHT_SOURCE){
+                incoming_light = vec4(1.0f,1.0f,1.0f,1.0f) * ray_color;
+                break;
+            }
             ray.origin = hit_info.hit_point;
             ray.dir = RandomDirectionHemisphere(hit_info.normal,state);
             vec4 emitted_light = material.emissionColour * material.emissionStrength;
             incoming_light += emitted_light * ray_color; 
             ray_color *= material.colour;  
         }
-        else{
-            incoming_light = GetEnvironmentLight(ray) * ray_color;
-            break;
-        }
+
         count+=1;
     }
     return incoming_light;
 }
-
-
-
 
 
 
@@ -519,7 +512,7 @@ GLuint createShaderProgram() {
     // Check for linking errors
     int success;
     char infoLog[512];
-    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);    
     if (!success) {
         glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
         std::cerr << "Shader linking failed:\n" << infoLog << std::endl;
@@ -542,15 +535,15 @@ int main() {
     
     RayTracingMaterial material;
     material.colour = glm::vec4(1.0f,0.0f,0.0f,1.0f);
-    material.emissionColour = glm::vec4(0.0f,1.0f,0.0f,1.0f);
-    material.specularColour = glm::vec4(0.0f,1.0f,0.0f,1.0f);
-    material.emissionStrength =1.0f;
+    material.emissionColour = glm::vec4(0.0f,0.0f,0.0f,1.0f);
+    material.specularColour = glm::vec4(1.0f,0.0f,0.0f,1.0f);
+    material.emissionStrength =0.0f;
     material.smoothness=1.0f;
     material.specularProbability=1.0f;
     material.flag =1;
 
-    glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,-3.0f);
-    Sphere sphere(30,30,sphereCenter,material, 1.0f);
+    glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,-7.0f);
+    Sphere sphere(30,30,sphereCenter,material, 5.0f);
     sphere_arr.push_back(sphere);
 
 
@@ -558,14 +551,14 @@ int main() {
     
     RayTracingMaterial material2;
     material2.colour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
-    material2.emissionColour = glm::vec4(1.0f,0.0f,0.0f,1.0f);
-    material2.specularColour= glm::vec4(1.0f,0.0f,0.0f,1.0f);
+    material2.emissionColour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
+    material2.specularColour= glm::vec4(1.0f,1.0f,1.0f,1.0f);
     material2.emissionStrength =1.0f;
     material2.smoothness=1.0f;
     material2.specularProbability=1.0f;
     material2.flag = LIGHT_SOURCE;
 
-    Sphere sphere2(30,30, glm::vec3(2.0f,2.0f,-3.0f),material2, 1.0f);
+    Sphere sphere2(30,30, glm::vec3(2.0f,2.0f,-25.0f),material2, 10.0f);
     sphere_arr.push_back(sphere2);
 
     Camera camera(1200,1200,45.0f, 0.1f, 100.0f);
