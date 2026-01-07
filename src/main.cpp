@@ -295,7 +295,7 @@ uniform mat4 projection;
 
 in vec2 TexCoord;
 int Frame;
-int maxBounceCount = 1;
+int maxBounceCount = 10;
 
 #define LIGHT_SOURCE 2
 
@@ -383,7 +383,7 @@ HitInfo RaySphere(Ray ray,  vec3 sphereCenter, float sphereRadius, RayTracingMat
 
     if(discrim >= 0){
         float dst = (-b - sqrt(discrim))/(2*a);
-        if (dst > 0.0) {
+        if (dst >= 0.0) {
             hit_info.did_hit = true;
             hit_info.dst = dst;
             hit_info.hit_point = ray.origin + dst * ray.dir;
@@ -464,6 +464,10 @@ vec4 Trace(){
             vec4 emitted_light = material.emissionColour * material.emissionStrength;
             incoming_light += emitted_light * ray_color; 
             ray_color *= material.colour;  
+        }
+        else{
+            incoming_light = vec4(0.0f,0.0f,0.0f,1.0f) * ray_color;
+            break;
         }
 
         count+=1;
@@ -558,8 +562,21 @@ int main() {
     material2.specularProbability=1.0f;
     material2.flag = LIGHT_SOURCE;
 
-    Sphere sphere2(30,30, glm::vec3(2.0f,2.0f,-25.0f),material2, 10.0f);
+    Sphere sphere2(30,30, glm::vec3(2.0f,2.0f,-100.0f),material2, 80.0f);
     sphere_arr.push_back(sphere2);
+
+
+    RayTracingMaterial material3;
+    material3.colour = glm::vec4(0.0f,1.0f,1.0f,1.0f);
+    material3.emissionColour = glm::vec4(0.0f,0.0f,0.0f,1.0f);
+    material3.specularColour= glm::vec4(1.0f,1.0f,1.0f,1.0f);
+    material3.emissionStrength =1.0f;
+    material3.smoothness=1.0f;
+    material3.specularProbability=1.0f;
+    material3.flag = 1;
+
+    Sphere sphere3(30,30, glm::vec3(7.0f,7.0f,-5.0f),material3, 3.0f);
+    sphere_arr.push_back(sphere3);
 
     Camera camera(1200,1200,45.0f, 0.1f, 100.0f);
 
