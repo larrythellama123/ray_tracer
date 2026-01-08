@@ -293,9 +293,12 @@ uniform vec2 u_Resolution;
 uniform mat4 view;
 uniform mat4 projection;
 
+uniform sampler2D prevFrame;
+uniform int Frame;
+
+
 in vec2 TexCoord;
-int Frame;
-int maxBounceCount = 10;
+int maxBounceCount = 5;
 
 #define LIGHT_SOURCE 2
 
@@ -440,12 +443,8 @@ HitInfo CalculateRayCollision(Ray ray){
 }
 
 
-vec4 Trace(){
+vec4 Trace(inout uint state){
     vec2 uv = TexCoord * 2.0 - 1.0;
-    vec2 pixelCoord = TexCoord * u_Resolution;
-    int pixelIndex = int(pixelCoord.y + pixelCoord.x * u_Resolution.x);
-    uint state = pixelIndex + Frame * 719393;
-
     vec4 incoming_light = vec4(0.0f,0.0f,0.0f,0.0f);
     vec4 ray_color = vec4(1.0f,1.0f,1.0f,1.0f);
 
@@ -486,7 +485,18 @@ vec4 Trace(){
 
 void main()
 {
-    FragColor = Trace();
+    vec4 color;
+    uint rays_per_pixel = 3;
+    vec2 pixelCoord = TexCoord * u_Resolution;
+    int pixelIndex = int(pixelCoord.y + pixelCoord.x * u_Resolution.x);
+    uint state = pixelIndex + Frame * 719393;
+    vec2 uv = TexCoord * 2.0 - 1.0;
+
+    vec4 accumulatedColor = texture(prevFrame, uv);
+    for(int i = 0; i < rays_per_pixel; i++){
+        color += Trace(state);
+    }   
+    FragColor = color/rays_per_pixel;
 }
 
 )";
@@ -583,6 +593,20 @@ int main() {
 
     Sphere sphere3(30,30, glm::vec3(0.0f,-250.0f,-7.0f),material3, 250.0f);
     sphere_arr.push_back(sphere3);
+
+    // RayTracingMaterial material3;
+    // material3.colour = glm::vec4(0.0f,1.0f,1.0f,1.0f);
+    // material3.emissionColour = glm::vec4(0.0f,0.0f,0.0f,1.0f);
+    // material3.specularColour= glm::vec4(1.0f,1.0f,1.0f,1.0f);
+    // material3.emissionStrength =1.0f;
+    // material3.smoothness=1.0f;
+    // material3.specularProbability=1.0f;
+    // material3.flag = 1;
+
+    // Sphere sphere3(30,30, glm::vec3(0.0f,-250.0f,-7.0f),material3, 250.0f);
+    // sphere_arr.push_back(sphere3);
+
+    
     int width = 1400;
     int height = 1400;
     Camera camera(width,height,45.0f, 0.1f, 100.0f);
@@ -620,6 +644,11 @@ int main() {
          1.0f,  1.0f, 0.0f,  1.0f, 1.0f,  // top-right
          1.0f, -1.0f, 0.0f,  1.0f, 0.0f   // bottom-right
     };
+
+    
+    GLuint fbos[2], textures[2];
+    int currentWriteBuffer = 0;
+
 
     GLuint VAO, VBO;
     glGenVertexArrays(1, &VAO);
@@ -696,4 +725,78 @@ void create_spheres(const std::vector<Sphere>& sphereObjects, GLuint& sphereSSBO
     glUseProgram(shaderProgram);
     glUniform1i(glGetUniformLocation(shaderProgram, "NumSpheres"), (int)spheres.size());
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+
+
+void initPingPongBuffers(int width, int height) {
+    glGenFramebuffers(2, fbos);
+    glGenTextures(2, textures);
+
+    for (int i = 0; i < 2; i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER, fbos[i]);
+        glBindTexture(GL_TEXTURE_2D, textures[i]);
+        
+        // Use GL_RGBA32F for high-precision accumulation
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textures[i], 0);
+    }
+}
+
+
+/////
+
+#version 450 core
+layout(location = 0) out vec4 FragColor;
+
+uniform sampler2D prevFrame;
+uniform int frameCount; // Resets when the camera moves
+uniform vec2 resolution;
+
+void main() {
+    vec2 uv = gl_FragCoord.xy / resolution;
+    
+    // 1. Perform Ray Casting for the current frame
+    vec3 currentRayColor = performRayCast(uv);
+
+    // 2. Read previous accumulated data
+    vec4 accumulatedColor = texture(prevFrame, uv);
+
+    // 3. Blend: new_color = (prev_accum * weight) + current_ray
+    // Weighting by 1/frameCount creates a true average over time
+    float weight = 1.0 / float(frameCount + 1);
+    vec3 finalColor = mix(accumulatedColor.rgb, currentRayColor, weight);
+
+    FragColor = vec4(finalColor, 1.0);
+}
+
+
+
+void renderFrame() {
+    int readBuffer = 1 - currentWriteBuffer;
+
+    // Bind current target FBO
+    glBindFramebuffer(GL_FRAMEBUFFER, fbos[currentWriteBuffer]);
+    glUseProgram(raycastShader);
+
+    // Bind the texture from the PREVIOUS frame as input
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, textures[readBuffer]);
+    glUniform1i(glGetUniformLocation(raycastShader, "prevFrame"), 0);
+    glUniform1i(glGetUniformLocation(raycastShader, "frameCount"), frameCount);
+
+    // Render full-screen quad to trigger ray casting for every pixel
+    renderFullScreenQuad();
+
+    // Swap buffers for the next frame
+    currentWriteBuffer = 1 - currentWriteBuffer;
+    frameCount++;
+
+    // Finally, blit/draw the result to the screen (default FBO 0)
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbos[readBuffer]);
+    glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 }
