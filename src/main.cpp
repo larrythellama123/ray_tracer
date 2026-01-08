@@ -95,7 +95,7 @@ class Camera{
         float camX = sin(glfwGetTime()) * radius;
         float camZ = cos(glfwGetTime()) * radius;
         const float sensitivity = 100.0f;
-        const float cameraSpeed = 0.010f; 
+        const float cameraSpeed = 0.90f; 
 
         Camera(int w, int h, float FOVdeg, float near_plane, float far_plane):width(w), height(h) {
             viewport = glm::vec4 (0, 0, width, height); 
@@ -336,36 +336,42 @@ struct Ray{
     vec3 dir;
 };
 
-
-int NextRandom(int state)
+float RandomValue(inout uint state)
 {
-    state = state * 747796405 + 2891336453;
-    int result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
-    result = (result >> 22) ^ result;
-    return result;
+    
+    state = state * 747796405u + 2891336453u;
+    uint result = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    result = (result >> 22u) ^ result;
+    return float(result) / 4294967295.0;
 }
 
-float RandomValue(int state)
-{
-    return NextRandom(state) / 4294967295.0; 
-}
 
-// Random value in normal distribution (with mean=0 and sd=1)
-float RandomValueNormalDistribution(int state)
+float RandomValueNormalDistribution(inout uint state)
 {
-    float theta = 2 * 3.1415926 * RandomValue(state);
+    float theta = 2 * 3.14159 * RandomValue(state);
     float rho = sqrt(-2 * log(RandomValue(state)));
     return rho * cos(theta);
 }
 
 
-vec3 RandomDirectionHemisphere(vec3 normal, int state){
-    float x  = RandomValueNormalDistribution(state);
-    float y  = RandomValueNormalDistribution(state);
-    float z  = RandomValueNormalDistribution(state);
-    vec3 dir = normalize(vec3(x,y,z));
-    return dir* sign(dot(normal,dir));
+vec3 RandomDirection(inout uint state)
+{
+    float x = RandomValueNormalDistribution(state);
+    float y = RandomValueNormalDistribution(state);
+    float z = RandomValueNormalDistribution(state);
+    return normalize(vec3(x, y, z));
 }
+
+vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
+{
+    vec3 randomDirectionVector = RandomDirection(state);
+    if (dot(normalVector, randomDirectionVector) < 0)
+    {
+        randomDirectionVector = -randomDirectionVector;
+    }
+    return randomDirectionVector;
+}
+
 
 
 HitInfo RaySphere(Ray ray,  vec3 sphereCenter, float sphereRadius, RayTracingMaterial material){
@@ -438,7 +444,7 @@ vec4 Trace(){
     vec2 uv = TexCoord * 2.0 - 1.0;
     vec2 pixelCoord = TexCoord * u_Resolution;
     int pixelIndex = int(pixelCoord.y + pixelCoord.x * u_Resolution.x);
-    int state = pixelIndex + Frame * 719393;
+    uint state = pixelIndex + Frame * 719393;
 
     vec4 incoming_light = vec4(0.0f,0.0f,0.0f,0.0f);
     vec4 ray_color = vec4(1.0f,1.0f,1.0f,1.0f);
@@ -547,7 +553,7 @@ int main() {
     material.flag =1;
 
     glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,-7.0f);
-    Sphere sphere(30,30,sphereCenter,material, 5.0f);
+    Sphere sphere(30,30,sphereCenter,material, 50.0f);
     sphere_arr.push_back(sphere);
 
 
@@ -562,7 +568,7 @@ int main() {
     material2.specularProbability=1.0f;
     material2.flag = LIGHT_SOURCE;
 
-    Sphere sphere2(30,30, glm::vec3(2.0f,2.0f,-100.0f),material2, 80.0f);
+    Sphere sphere2(30,30, glm::vec3(2.0f,2.0f,-700.0f),material2, 300.0f);
     sphere_arr.push_back(sphere2);
 
 
@@ -575,16 +581,17 @@ int main() {
     material3.specularProbability=1.0f;
     material3.flag = 1;
 
-    Sphere sphere3(30,30, glm::vec3(7.0f,7.0f,-5.0f),material3, 3.0f);
+    Sphere sphere3(30,30, glm::vec3(0.0f,-250.0f,-7.0f),material3, 250.0f);
     sphere_arr.push_back(sphere3);
-
-    Camera camera(1200,1200,45.0f, 0.1f, 100.0f);
+    int width = 1400;
+    int height = 1400;
+    Camera camera(width,height,45.0f, 0.1f, 100.0f);
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(1200, 1200, "OpenGL Window", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(width, height, "OpenGL Window", NULL, NULL);
     if (!window) {
         glfwTerminate();
         return -1;
