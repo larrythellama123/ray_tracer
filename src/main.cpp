@@ -75,7 +75,9 @@ HitInfo RaySphere(Ray ray,  float sphereCenter, float sphereRadius){
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 
+void initPingPongBuffers(int width, int height, GLuint* fbos, GLuint* textures);
 
+void resetBuffers(GLuint fboA, GLuint fboB) ;
 
 class Camera{
     public:
@@ -133,66 +135,88 @@ class Camera{
                 }
             }
         }
-        void process_inputs(GLFWwindow *window)
+        bool process_inputs(GLFWwindow *window)
         {
+            bool flag = false;
 
             if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            {
                 cameraPos += cameraSpeed * Orientation;
+                flag = true; 
+            }
+                  
             if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            {
                 cameraPos -= cameraSpeed * Orientation;
+                flag = true;   
+            }
+               
+
             if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            {
                 cameraPos -= glm::normalize(glm::cross(Orientation, cameraUp)) * cameraSpeed;
+                flag = true;
+            }
+                   
+
             if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            {
                 cameraPos += glm::normalize(glm::cross(Orientation, cameraUp)) * cameraSpeed;
+                flag = true;
+            }
+                   
+
 
             
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
-        {
-            // Hides mouse cursor
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+            if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
+            {
+                // Hides mouse cursor
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
 
-                // Prevents camera from jumping on the first click
-                if (firstClick)
-                {
+                    // Prevents camera from jumping on the first click
+                    if (firstClick)
+                    {
+                        glfwSetCursorPos(window, (width / 2), (height / 2));
+                        firstClick = false;
+                    }
+
+                    // Stores the coordinates of the cursor
+                    double mouseX;
+                    double mouseY;
+                    // Fetches the coordinates of the cursor
+                    glfwGetCursorPos(window, &mouseX, &mouseY);
+
+                    // Normalizes and shifts the coordinates of the cursor such that they begin in the middle of the screen
+                    // and then "transforms" them into degrees 
+                    float rotX = sensitivity * (float)(mouseY - (height / 2)) / height;
+                    float rotY = sensitivity * (float)(mouseX - (width / 2)) / width;
+
+                    // Calculates upcoming vertical change in the Orientation
+                    glm::vec3 newOrientation = glm::rotate(Orientation, glm::radians(-rotX), glm::normalize(glm::cross(Orientation, cameraUp)));
+
+                    // Decides whether or not the next vertical Orientation is legal or not
+                    if (glm::abs(glm::angle(newOrientation, cameraUp) - glm::radians(90.0f)) <= glm::radians(85.0f))
+                    {
+                        Orientation = newOrientation;
+                    }
+
+                    // Rotates the Orientation left and right
+                    Orientation = glm::rotate(Orientation, glm::radians(-rotY), cameraUp);
+
+                    // Sets mouse cursor to the middle of the screen so that it doesn't end up roaming around
                     glfwSetCursorPos(window, (width / 2), (height / 2));
-                    firstClick = false;
-                }
+                    flag = true;   
 
-                // Stores the coordinates of the cursor
-                double mouseX;
-                double mouseY;
-                // Fetches the coordinates of the cursor
-                glfwGetCursorPos(window, &mouseX, &mouseY);
-
-                // Normalizes and shifts the coordinates of the cursor such that they begin in the middle of the screen
-                // and then "transforms" them into degrees 
-                float rotX = sensitivity * (float)(mouseY - (height / 2)) / height;
-                float rotY = sensitivity * (float)(mouseX - (width / 2)) / width;
-
-                // Calculates upcoming vertical change in the Orientation
-                glm::vec3 newOrientation = glm::rotate(Orientation, glm::radians(-rotX), glm::normalize(glm::cross(Orientation, cameraUp)));
-
-                // Decides whether or not the next vertical Orientation is legal or not
-                if (glm::abs(glm::angle(newOrientation, cameraUp) - glm::radians(90.0f)) <= glm::radians(85.0f))
-                {
-                    Orientation = newOrientation;
-                }
-
-                // Rotates the Orientation left and right
-                Orientation = glm::rotate(Orientation, glm::radians(-rotY), cameraUp);
-
-                // Sets mouse cursor to the middle of the screen so that it doesn't end up roaming around
-                glfwSetCursorPos(window, (width / 2), (height / 2));
-
+            }
+            else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE)
+            {
+                // Unhides cursor since camera is not looking around anymore
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                // Makes sure the next time the camera looks around it doesn't jump
+                firstClick = true;
+            }
+            return flag;
         }
-        else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE)
-        {
-            // Unhides cursor since camera is not looking around anymore
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            // Makes sure the next time the camera looks around it doesn't jump
-            firstClick = true;
-        }
-    }
 
 };
 
@@ -298,7 +322,7 @@ uniform int Frame;
 
 
 in vec2 TexCoord;
-int maxBounceCount = 5;
+int maxBounceCount = 10;
 
 #define LIGHT_SOURCE 2
 
@@ -482,21 +506,28 @@ vec4 Trace(inout uint state){
 
 
 
-
 void main()
 {
-    vec4 color;
     uint rays_per_pixel = 3;
     vec2 pixelCoord = TexCoord * u_Resolution;
     int pixelIndex = int(pixelCoord.y + pixelCoord.x * u_Resolution.x);
     uint state = pixelIndex + Frame * 719393;
     vec2 uv = TexCoord * 2.0 - 1.0;
+    
+    vec4 currentRayColor = Trace(state);
+    vec4 accumulatedColor = texture(prevFrame, TexCoord);   
+    vec4 finalColor = currentRayColor;
 
-    vec4 accumulatedColor = texture(prevFrame, uv);
-    for(int i = 0; i < rays_per_pixel; i++){
-        color += Trace(state);
-    }   
-    FragColor = color/rays_per_pixel;
+    if(Frame != 0){
+         // blend: new_color = (prev_accum * weight) + current_rays
+        float weight = 1.0 / float(Frame + 1);
+
+        // finalColor = vec4(1.0f,1.0f,1.0f,1.0f);
+        finalColor = vec4(mix(vec3(currentRayColor), accumulatedColor.rgb, weight),1.0f);
+        // finalColor = accumulatedColor  + currentRayColor;
+    }
+
+    FragColor = finalColor; 
 }
 
 )";
@@ -648,7 +679,7 @@ int main() {
     
     GLuint fbos[2], textures[2];
     int currentWriteBuffer = 0;
-
+    initPingPongBuffers(width, height, fbos, textures);
 
     GLuint VAO, VBO;
     glGenVertexArrays(1, &VAO);
@@ -668,20 +699,47 @@ int main() {
 
 
     // Render loop
+    int Frame = 0;
     while (!glfwWindowShouldClose(window)) {
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
+        bool moved = camera.process_inputs(window);
+        if(moved){
+            Frame = 0;
+            // resetBuffers(fbos[0],fbos[1]);  
+        }
+        int readBuffer = 1 - currentWriteBuffer;
+        glBindFramebuffer(GL_FRAMEBUFFER, fbos[currentWriteBuffer]);
         glUseProgram(shaderProgram);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, textures[readBuffer]);
+
+
         glBindVertexArray(VAO);
-        camera.process_inputs(window);  
+        // bool moved = camera.process_inputs(window);
+        // if(moved){
+        //     Frame = 0;
+        //     resetBuffers(fbos[0],fbos[1]);  
+        // }
+           
         camera.view = glm::lookAt(camera.cameraPos, camera.cameraPos + camera.Orientation, camera.cameraUp);
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(camera.view));
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(camera.projection));
         glUniform3fv(glGetUniformLocation(shaderProgram, "u_RayOrigin"), 1, glm::value_ptr(camera.cameraPos));
         glUniform3fv(glGetUniformLocation(shaderProgram, "u_CameraOrientation"), 1, glm::value_ptr(camera.Orientation));
-        glUniform2f(glGetUniformLocation(shaderProgram, "u_Resolution"), 1200.0f, 1200.0f);
+        glUniform2f(glGetUniformLocation(shaderProgram, "u_Resolution"), 1400.0f, 1400.0f);
+        glUniform1i(glGetUniformLocation(shaderProgram, "prevFrame"), 0);
+        glUniform1i(glGetUniformLocation(shaderProgram, "Frame"), Frame);
 
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fbos[currentWriteBuffer]);
+        glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        currentWriteBuffer = 1 - currentWriteBuffer;
+        Frame++;
+        
       
         
         glBindVertexArray(0);
@@ -729,7 +787,7 @@ void create_spheres(const std::vector<Sphere>& sphereObjects, GLuint& sphereSSBO
 
 
 
-void initPingPongBuffers(int width, int height) {
+void initPingPongBuffers(int width, int height,GLuint* fbos,  GLuint* textures) {
     glGenFramebuffers(2, fbos);
     glGenTextures(2, textures);
 
@@ -747,56 +805,16 @@ void initPingPongBuffers(int width, int height) {
 }
 
 
-/////
+void resetBuffers(GLuint fboA, GLuint fboB) {
+    // Clear first buffer
+    glBindFramebuffer(GL_FRAMEBUFFER, fboA);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f); 
+    glClear(GL_COLOR_BUFFER_BIT);
 
-#version 450 core
-layout(location = 0) out vec4 FragColor;
+    // Clear second buffer
+    glBindFramebuffer(GL_FRAMEBUFFER, fboB);
+    glClear(GL_COLOR_BUFFER_BIT);
 
-uniform sampler2D prevFrame;
-uniform int frameCount; // Resets when the camera moves
-uniform vec2 resolution;
-
-void main() {
-    vec2 uv = gl_FragCoord.xy / resolution;
-    
-    // 1. Perform Ray Casting for the current frame
-    vec3 currentRayColor = performRayCast(uv);
-
-    // 2. Read previous accumulated data
-    vec4 accumulatedColor = texture(prevFrame, uv);
-
-    // 3. Blend: new_color = (prev_accum * weight) + current_ray
-    // Weighting by 1/frameCount creates a true average over time
-    float weight = 1.0 / float(frameCount + 1);
-    vec3 finalColor = mix(accumulatedColor.rgb, currentRayColor, weight);
-
-    FragColor = vec4(finalColor, 1.0);
-}
-
-
-
-void renderFrame() {
-    int readBuffer = 1 - currentWriteBuffer;
-
-    // Bind current target FBO
-    glBindFramebuffer(GL_FRAMEBUFFER, fbos[currentWriteBuffer]);
-    glUseProgram(raycastShader);
-
-    // Bind the texture from the PREVIOUS frame as input
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, textures[readBuffer]);
-    glUniform1i(glGetUniformLocation(raycastShader, "prevFrame"), 0);
-    glUniform1i(glGetUniformLocation(raycastShader, "frameCount"), frameCount);
-
-    // Render full-screen quad to trigger ray casting for every pixel
-    renderFullScreenQuad();
-
-    // Swap buffers for the next frame
-    currentWriteBuffer = 1 - currentWriteBuffer;
-    frameCount++;
-
-    // Finally, blit/draw the result to the screen (default FBO 0)
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbos[readBuffer]);
-    glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    // Unbind
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
