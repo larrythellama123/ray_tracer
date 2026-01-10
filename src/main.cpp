@@ -50,6 +50,14 @@ struct Ray{
     glm::vec3 dir;
 };
 
+struct Triangle{
+    glm::vec4 a;
+    glm::vec4 b;
+    glm::vec4 c;
+    RayTracingMaterial material;
+}
+
+
 
 HitInfo RaySphere(Ray ray,  float sphereCenter, float sphereRadius){
     HitInfo hit_info;
@@ -78,6 +86,104 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void initPingPongBuffers(int width, int height, GLuint* fbos, GLuint* textures);
 
 void resetBuffers(GLuint fboA, GLuint fboB) ;
+
+std::vector<Triangle> load_object(std::string file_path, RayTracingMaterial material){
+
+    std::ifstream file(file_path);
+
+    std::vector<glm::vec3> vertice_data;
+
+    std::vector<Triangle> triangle_data;
+
+    triangle_data.reserve(300000); 
+
+    vertice_data.reserve(500000); // Pre-allocate reasonable size
+
+
+
+    int line_number = 0;
+
+    if (!file.is_open()) {
+
+        std::cerr << "Error: Could not open file!" << std::endl;
+
+    }
+
+    std::string line;
+
+    while (std::getline(file, line)) {
+
+        line_number++;
+
+
+        std::istringstream iss(line);
+
+        std::string prefix;
+
+        iss >> prefix;
+
+        if(prefix == "v"){
+
+            float x, y, z;
+
+            iss >> x >> y >> z;  
+
+            glm::vec3 vector = glm::vec3(x,y,z);
+
+            vertice_data.push_back(vector);
+
+        }
+
+        if(prefix == "f"){
+
+            int x, y, z;
+            if (iss >> x >> y >> z) {
+
+                // Convert to 0-based indexing and check bounds
+
+                int idx1 = x - 1;
+
+                int idx2 = y - 1; 
+
+                int idx3 = z - 1;
+
+
+
+                // Bounds checking
+
+                if (idx1 >= 0 && idx1 < vertice_data.size() &&
+
+                    idx2 >= 0 && idx2 < vertice_data.size() &&
+
+                    idx3 >= 0 && idx3 < vertice_data.size()) {
+
+
+
+                    Triangle tri = {vertice_data[idx1], vertice_data[idx2], vertice_data[idx3], material};
+                    triangle_data.push_back(tri);
+
+                } else {
+
+                    std::cerr << "Error: Invalid face indices on line " << line_number 
+
+                            << " (indices: " << x << "," << y << "," << z 
+
+                            << ", vertex count: " << vertice_data.size() << ")" << std::endl;
+
+                }
+
+            } else {
+
+                std::cerr << "Warning: Invalid face on line " << line_number << std::endl;
+
+            }
+
+        }
+
+    }
+
+    return triangle_data;
+}
 
 class Camera{
     public:
@@ -229,8 +335,7 @@ class Sphere{
         std::vector<unsigned int> indices;
         int stackCount = 5;
         int sectorCount = 5;
-        glm
-::vec3 position;
+        glm::vec3 position;
         RayTracingMaterial material;
         float radius = 1;
         float PI = 3.14;
@@ -354,16 +459,10 @@ struct Sphere {
     RayTracingMaterial material;
 };
 
-struct triangle{
+struct Triangle{
     vec4 a;
     vec4 b;
     vec4 c;
-
-    //normals
-    vec4 a_n;
-    vec4 b_n;
-    vec4 c_n;
-
     RayTracingMaterial material;
 }
 
@@ -453,41 +552,48 @@ HitInfo RaySphere(Ray ray,  vec3 sphereCenter, float sphereRadius, RayTracingMat
     return hit_info;
 };
 
-HitInfo rayTriangleIntersect(
-        const Vec3f &orig, const Vec3f &dir,
-        const Vec3f &v0, const Vec3f &v1, const Vec3f &v2,
-        float &t, float &u, float &v)
+HitInfo RayTriangle(Ray ray, Triangle tri)
     {
+        vec3 orig  = ray.origin;
+        vec3 dir = ray.dir;
+
+        vec3 v0 = vec3(tri.a);
+        vec3 v1 = vec3(tri.b);
+        vec3 v2 = vec3(tri.c);
+
         HitInfo hit_info;
         hit_info.did_hit = false;
-        Vec3f v0v1 = v1 - v0;
-        Vec3f v0v2 = v2 - v0;
-        Vec3f pvec = dir.crossProduct(v0v2);
-        float det = v0v1.dotProduct(pvec);
+        vec3 v0v1 = v1 - v0;
+        vec3 v0v2 = v2 - v0;
+        vec3 pvec = cross(dir,v0v2);
+        float det = dot(pvec,v0v1);
 
         // If the determinant is negative, the triangle is back-facing.
         // If the determinant is close to 0, the ray misses the triangle.
-        if (det < kEpsilon){
-            return hit_info;
-        }
-    
         // If det is close to 0, the ray and triangle are parallel.
-        if (fabs(det) < kEpsilon){
+
+        if (det < kEpsilon || fabs(det) < kEpsilon){
             return hit_info;
         }
-    
+       
         float invDet = 1 / det;
 
-        Vec3f tvec = orig - v0;
-        u = tvec.dotProduct(pvec) * invDet;
-        if (u < 0 || u > 1) return false;
+        vec3 tvec = orig - v0;
+        float u = (tvec,pvec) * invDet;
+        if (u < 0 || u > 1) return hit_info;
 
-        Vec3f qvec = tvec.crossProduct(v0v1);
-        v = dir.dotProduct(qvec) * invDet;
-        if (v < 0 || u + v > 1) return false;
+        vec3 qvec = cross(tvec, v0v1);
+        float v = dot(dir,qvec) * invDet;
+        if (v < 0 || u + v > 1) return hit_info;
         
-        t = v0v2.dotProduct(qvec) * invDet;
- 
+        float t = dot(v0v2,qvec) * invDet;
+
+        hit_info.did_hit = true;
+        hit_info.hit_point = orig + t*dir;
+        hit_info.dst = t;
+        hit_info.normal = normalize(cross(v0v2,v0v1));
+        hit_info.material = tri.material;
+
         return hit_info;
 };
 
