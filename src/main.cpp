@@ -12,8 +12,10 @@
 #include <glm/gtx/rotate_vector.hpp>
 #include <glm/gtx/vector_angle.hpp>
 #include <glm/trigonometric.hpp>
-
-
+#include <fstream>
+#include <iostream>
+#include <sstream> 
+#include <string> 
 #define LIGHT_SOURCE 2
 // ability to change emission strength of light source
 //  ability to show soft colours of neighboring objects on the other objects
@@ -55,8 +57,27 @@ struct Triangle{
     glm::vec4 b;
     glm::vec4 c;
     RayTracingMaterial material;
-}
+};
 
+struct BVH{
+    glm::vec4 min = vec4(1e10,1e10,1e10,1.0f);
+    glm::vec4 max = vec4(0.0f,0.0f,0.0f,1.0f);
+    glm::vec4 centre = min;
+};
+void GrowBVHVertice(BVH bvh, vec4 vertice){
+    bvh.min = min(bvh.min, vertice);
+    bvh.max = max(bvh.max, vertice);
+    bvh.centre = (bvh.min+bvh.max)/2;
+};
+BVH GrowBVHTriangle(std::vector<Triangle> triangles){
+    BVH bvh;
+    for(int i {0};  i < triangles.size(); i++){
+        GrowBVHVertice(bvh, triangles[i].a);
+        GrowBVHVertice(bvh,triangles[i].b);
+        GrowBVHVertice(bvh,triangles[i].c);
+    }
+    return BVH;
+};
 
 
 HitInfo RaySphere(Ray ray,  float sphereCenter, float sphereRadius){
@@ -87,11 +108,11 @@ void initPingPongBuffers(int width, int height, GLuint* fbos, GLuint* textures);
 
 void resetBuffers(GLuint fboA, GLuint fboB) ;
 
-std::vector<Triangle> load_object(std::string file_path, RayTracingMaterial material){
+std::vector<Triangle> load_object(std::string file_path, RayTracingMaterial material, float screen_offset){
 
     std::ifstream file(file_path);
 
-    std::vector<glm::vec3> vertice_data;
+    std::vector<glm::vec4> vertice_data;
 
     std::vector<Triangle> triangle_data;
 
@@ -128,7 +149,7 @@ std::vector<Triangle> load_object(std::string file_path, RayTracingMaterial mate
 
             iss >> x >> y >> z;  
 
-            glm::vec3 vector = glm::vec3(x,y,z);
+            glm::vec4 vector = glm::vec4(x*10,y*10,(z*10)-screen_offset,1.0f);
 
             vertice_data.push_back(vector);
 
@@ -404,6 +425,9 @@ void displayImage(GLuint texture, GLuint displayShader) {
 }
 
 void create_spheres(const std::vector<Sphere>& sphereObjects, GLuint& sphereSSBO, GLuint shaderProgram);
+void create_triangles(const std::vector<Triangle>& triangles, GLuint& triangleSSBO, GLuint shaderProgram);
+
+//Grow ALL BVHs
 
 // Vertex Shader - processes each vertex
 const char* vertexShaderSource = R"(
@@ -437,7 +461,7 @@ uniform int Frame;
 
 
 in vec2 TexCoord;
-int maxBounceCount = 10;
+int maxBounceCount = 5;
 
 #define LIGHT_SOURCE 2
 
@@ -464,12 +488,19 @@ struct Triangle{
     vec4 b;
     vec4 c;
     RayTracingMaterial material;
-}
+};
 
 layout(std430, binding = 0) readonly buffer SphereBuffer {
     Sphere spheres[]; 
 };
 
+layout(std430, binding = 1) readonly buffer TriangleBuffer {
+    Triangle triangles[]; 
+};
+
+layout(std430, binding = 2) readonly buffer BVHBuffer {
+    BVH BVHs[]; 
+};
 
 
 
@@ -485,6 +516,17 @@ struct Ray{
     vec3 origin;
     vec3 dir;
 };
+
+struct BVH{
+    vec4 min = vec4(1e10,1e10,1e10,1.0f);
+    vec4 max = vec4(0.0f,0.0f,0.0f,1.0f);
+    vec4 centre = min;
+};
+
+struct BVHNode{
+
+}
+
 
 float RandomValue(inout uint state)
 {
@@ -552,7 +594,7 @@ HitInfo RaySphere(Ray ray,  vec3 sphereCenter, float sphereRadius, RayTracingMat
     return hit_info;
 };
 
-HitInfo RayTriangle(Ray ray, Triangle tri)
+HitInfo RayTriangle(const Ray ray, const Triangle tri)
     {
         vec3 orig  = ray.origin;
         vec3 dir = ray.dir;
@@ -563,6 +605,11 @@ HitInfo RayTriangle(Ray ray, Triangle tri)
 
         HitInfo hit_info;
         hit_info.did_hit = false;
+        hit_info.dst = 1e10;
+        hit_info.hit_point = vec3(1.0,1.0,1.0);
+        hit_info.normal = vec3(1.0,1.0,1.0);
+
+        hit_info.did_hit = false;
         vec3 v0v1 = v1 - v0;
         vec3 v0v2 = v2 - v0;
         vec3 pvec = cross(dir,v0v2);
@@ -572,14 +619,18 @@ HitInfo RayTriangle(Ray ray, Triangle tri)
         // If the determinant is close to 0, the ray misses the triangle.
         // If det is close to 0, the ray and triangle are parallel.
 
-        if (det < kEpsilon || fabs(det) < kEpsilon){
+        const float kEpsilon = 0.0000001;
+        // if (det < kEpsilon || fabs(det) < kEpsilon){
+        //     return hit_info;
+        // }
+        if (abs(det) < kEpsilon) {
             return hit_info;
         }
        
         float invDet = 1 / det;
 
         vec3 tvec = orig - v0;
-        float u = (tvec,pvec) * invDet;
+        float u = dot(tvec,pvec) * invDet;
         if (u < 0 || u > 1) return hit_info;
 
         vec3 qvec = cross(tvec, v0v1);
@@ -588,6 +639,11 @@ HitInfo RayTriangle(Ray ray, Triangle tri)
         
         float t = dot(v0v2,qvec) * invDet;
 
+        // return if dst t is less than small value as this means a ray dir is being multiplied by a negative, 
+        //so it is moving in the incorrect dir to the ray dir
+        if (t < kEpsilon) return hit_info;
+
+        
         hit_info.did_hit = true;
         hit_info.hit_point = orig + t*dir;
         hit_info.dst = t;
@@ -620,23 +676,32 @@ HitInfo CalculateRayCollision(Ray ray){
     HitInfo closest_hit_info;
     float distance = 1e10;
     vec4 colour = vec4(0.2, 0.3, 0.3, 1.0);
+    HitInfo hit_info;
 
     for(int i=0; i < spheres.length(); ++i){
         u_SphereCenter = vec3(spheres[i].position);
         u_SphereRadius = spheres[i].radius;
         u_SphereMaterial = spheres[i].material;
 
-        HitInfo hit_info = RaySphere(ray,  u_SphereCenter, u_SphereRadius,  u_SphereMaterial);
+        hit_info = RaySphere(ray,  u_SphereCenter, u_SphereRadius,  u_SphereMaterial);
         if(hit_info.did_hit && hit_info.dst<distance){
             distance = hit_info.dst;
             closest_hit_info = hit_info;
         }        
+    }
+    for(int i=0; i < triangles.length(); ++i){
+        hit_info = RayTriangle(ray, triangles[i]);
+        if(hit_info.did_hit && hit_info.dst<distance){
+            distance = hit_info.dst;
+            closest_hit_info = hit_info;
+        }    
     }
     return closest_hit_info;
 }
 
 
 vec4 Trace(inout uint state){
+    BVH bvh
     vec2 uv = TexCoord * 2.0 - 1.0;
     vec4 incoming_light = vec4(0.0f,0.0f,0.0f,0.0f);
     vec4 ray_color = vec4(1.0f,1.0f,1.0f,1.0f);
@@ -664,7 +729,7 @@ vec4 Trace(inout uint state){
             ray_color *= material.colour;  
         }
         else{
-            incoming_light = vec4(0.0f,0.0f,0.0f,1.0f) * ray_color;
+            incoming_light = vec4(0.2f,0.1f,0.3f,1.0f) * ray_color;
             break;
         }
 
@@ -675,6 +740,7 @@ vec4 Trace(inout uint state){
 
 layout(rgba32f, binding = 0) uniform readonly image2D prevFrame;
 layout(rgba32f, binding = 1) uniform writeonly image2D currentFrame;
+
 void main()
 {
     uint rays_per_pixel = 10;
@@ -700,35 +766,6 @@ void main()
     }
 }
 
-// void main()
-// {
-//     uint rays_per_pixel = 10;
-//     vec2 pixelCoord = TexCoord * u_Resolution;
-//     int pixelIndex = int(pixelCoord.y + pixelCoord.x * u_Resolution.x);
-//     uint state = pixelIndex + Frame * 719393;
-//     vec2 uv = TexCoord * 2.0 - 1.0;
-    
-//     vec4 totalColor = vec4(0.0);
-//     for(uint i = 0; i < rays_per_pixel; i++){
-//         uint state = uint(pixelIndex) + (Frame * rays_per_pixel + i) * 719393u;
-//         totalColor += Trace(state);
-//     }
-//     vec4 currentRayColor = totalColor / float(rays_per_pixel);
-//     vec4 accumulatedColor = texture(prevFrame, TexCoord);   
-//     vec4 finalColor = currentRayColor;
-
-//     if(Frame>0){
-    
-//          // blend: new_color = (prev_accum * weight) + current_rays
-//         // float weight = 1.0 / float(Frame);
-
-//         // finalColor = vec4(mix(accumulatedColor.rgb, vec3(currentRayColor),  weight),1.0f);
-//         finalColor = accumulatedColor;
-//     }
-        
-//     FragColor = finalColor; 
-
-// }
 
 )";
 
@@ -838,7 +875,6 @@ int main() {
     if (!glfwInit()) {
         return -1;
     }
-
     std::vector<Sphere>sphere_arr;
     
     RayTracingMaterial material;
@@ -850,23 +886,23 @@ int main() {
     material.specularProbability=1.0f;
     material.flag =1;
 
-    glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,-7.0f);
+    glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,0.0f);
     Sphere sphere(30,30,sphereCenter,material, 50.0f);
     sphere_arr.push_back(sphere);
 
 
 
     
-    // RayTracingMaterial material2;
-    // material2.colour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
-    // material2.emissionColour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
-    // material2.specularColour= glm::vec4(1.0f,1.0f,1.0f,1.0f);
-    // material2.emissionStrength =1.0f;
-    // material2.smoothness=1.0f;
-    // material2.specularProbability=1.0f;
-    // material2.flag = LIGHT_SOURCE;
+    RayTracingMaterial material2;
+    material2.colour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
+    material2.emissionColour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
+    material2.specularColour= glm::vec4(1.0f,1.0f,1.0f,1.0f);
+    material2.emissionStrength =1.0f;
+    material2.smoothness=1.0f;
+    material2.specularProbability=1.0f;
+    material2.flag = LIGHT_SOURCE;
 
-    // Sphere sphere2(30,30, glm::vec3(2.0f,2.0f,-700.0f),material2, 300.0f);
+    Sphere sphere2(30,30, glm::vec3(2.0f,2.0f,-700.0f),material2, 300.0f);
     // sphere_arr.push_back(sphere2);
 
 
@@ -880,7 +916,7 @@ int main() {
     material3.flag = 1;
 
     Sphere sphere3(30,30, glm::vec3(0.0f,-250.0f,-7.0f),material3, 250.0f);
-    sphere_arr.push_back(sphere3);
+    // sphere_arr.push_back(sphere3);
 
     RayTracingMaterial material4;
     material4.colour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
@@ -891,10 +927,15 @@ int main() {
     material4.specularProbability=1.0f;
     material4.flag = LIGHT_SOURCE;
 
-    Sphere sphere4(30,30, glm::vec3(-80.0f,30.0f,-7.0f),material4, 30.0f);
+    // Sphere sphere4(30,30, glm::vec3(-80.0f,30.0f,-7.0f),material4, 30.0f);
+    Sphere sphere4(30,30, glm::vec3(0.0f,0.0f,-300.0f),material4, 200.0f);
     sphere_arr.push_back(sphere4);
 
-    
+    std::vector<Triangle> triangle_arr = load_object("VideoShip.obj", material,60.0f);
+    std::vector<Triangle> tri_arr;
+    Triangle tri = {glm::vec4(1.0f,1.0f,1.0f,1.0f),glm::vec4(50.0f,70.0f,-7.0f,1.0f),glm::vec4(5.0f,100.0f,-7.0f,1.0f), material};
+    tri_arr.push_back(tri);
+
     int width = 1400;
     int height = 1400;
     Camera camera(width,height,45.0f, 0.1f, 100.0f);
@@ -921,8 +962,19 @@ int main() {
     // Create shader program
     GLuint shaderProgram = createShaderProgram();
     GLuint sphereSSBO = 0;
+    GLuint triangleSSBO = 0;
+    GLuint BVHSSBO = 0;
+
+
 
     create_spheres(sphere_arr, sphereSSBO,shaderProgram);
+    create_triangles(tri_arr, triangleSSBO, shaderProgram);
+    
+    BVH bvh = GrowBVHTriangle(const std::vector<Triangle>& triangles);
+    std::vector<BVH> BVHs;
+    BVHs.push_back(bvh);
+    create_BVHs(BVHs, BVHSSBO, shaderProgram); 
+    SAH_BVH();
 
     // Create fullscreen quad (covers entire screen in NDC coordinates)
     float quadVertices[] = {
@@ -975,8 +1027,8 @@ int main() {
         
         glUseProgram(shaderProgram);
         // Bind images to image units
-        glBindImageTexture(0, textures[readBuffer], 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);   // ✅ prevFrame
-        glBindImageTexture(1, textures[currentWriteBuffer], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F); // ✅ currentFrame
+        glBindImageTexture(0, textures[readBuffer], 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);   
+        glBindImageTexture(1, textures[currentWriteBuffer], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F); 
         
         glBindVertexArray(VAO);
         
@@ -1038,6 +1090,43 @@ void create_spheres(const std::vector<Sphere>& sphereObjects, GLuint& sphereSSBO
     glUseProgram(shaderProgram);
     glUniform1i(glGetUniformLocation(shaderProgram, "NumSpheres"), (int)spheres.size());
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+
+void create_triangles(const std::vector<Triangle>& triangles, GLuint& triangleSSBO, GLuint shaderProgram) {
+    if (triangleSSBO == 0) glGenBuffers(1, &triangleSSBO);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, triangleSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, triangles.size() * sizeof(Triangle), 
+                 triangles.data(), GL_STATIC_DRAW);
+    
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, triangleSSBO);
+    glUseProgram(shaderProgram);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+
+
+void create_BVHs(const std::vector<BVH>& BVHs, GLuint& BVHSSBO, GLuint shaderProgram) {
+
+    if (BVHSSBO == 0) glGenBuffers(1, &BVHSSBO);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, BVHSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, BVHs.size() * sizeof(BVH), 
+                 BVHs.data(), GL_STATIC_DRAW);
+    
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, BVHSSBO);
+    glUseProgram(shaderProgram);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void SAH_BVH(const std::vector<Triangle>& triangle_arr){
+    uint8_t num_buckets = 16;
+    for(int i {0}; i<triangle_arr.size(); i++){
+        glm::vec3 centroid = (triangle_arr[i].a + triangle_arr[i].b + triangle_arr[i].c)*0.5;
+            
+
+    }
 }
 
 

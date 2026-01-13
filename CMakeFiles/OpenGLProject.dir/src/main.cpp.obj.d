@@ -322,4 +322,11 @@ CMakeFiles/OpenGLProject.dir/src/main.cpp.obj: \
  c:\users\rkuru\ray_tracer\thirdparty\glm\glm\gtx\norm.hpp \
  c:\users\rkuru\ray_tracer\thirdparty\glm\glm\gtx\norm.inl \
  c:\users\rkuru\ray_tracer\thirdparty\glm\glm\gtx\quaternion.inl \
- C:/Users/rkuru/ray_tracer/thirdparty/glm/glm/gtx/vector_angle.inl
+ C:/Users/rkuru/ray_tracer/thirdparty/glm/glm/gtx/vector_angle.inl \
+ c:\mingw\lib\gcc\mingw32\6.3.0\include\c++\fstream \
+ c:\mingw\lib\gcc\mingw32\6.3.0\include\c++\bits\codecvt.h \
+ c:\mingw\lib\gcc\mingw32\6.3.0\include\c++\mingw32\bits\basic_file.h \
+ c:\mingw\lib\gcc\mingw32\6.3.0\include\c++\mingw32\bits\c++io.h \
+ c:\mingw\lib\gcc\mingw32\6.3.0\include\c++\bits\fstream.tcc \
+ c:\mingw\lib\gcc\mingw32\6.3.0\include\c++\sstream \
+ c:\mingw\lib\gcc\mingw32\6.3.0\include\c++\bits\sstream.tcc

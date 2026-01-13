@@ -65,11 +65,13 @@ CMakeFiles/OpenGLProject.dir/src/main.cpp.obj: src/main.cpp \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/basic_string.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/basic_string.tcc \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/char_traits.h \
+  c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/codecvt.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/concept_check.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/cpp_type_traits.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/cxxabi_forced.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/exception_defines.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/exception_ptr.h \
+  c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/fstream.tcc \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/functexcept.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/functional_hash.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/hash_bytes.h \
@@ -89,6 +91,7 @@ CMakeFiles/OpenGLProject.dir/src/main.cpp.obj: src/main.cpp \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/predefined_ops.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/ptr_traits.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/range_access.h \
+  c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/sstream.tcc \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/stl_algobase.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/stl_bvector.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/stl_construct.h \
@@ -126,6 +129,7 @@ CMakeFiles/OpenGLProject.dir/src/main.cpp.obj: src/main.cpp \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/ext/numeric_traits.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/ext/string_conversions.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/ext/type_traits.h \
+  c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/fstream \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/initializer_list \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/ios \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/iosfwd \
@@ -133,8 +137,10 @@ CMakeFiles/OpenGLProject.dir/src/main.cpp.obj: src/main.cpp \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/istream \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/limits \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/atomic_word.h \
+  c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/basic_file.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/c++allocator.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/c++config.h \
+  c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/c++io.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/c++locale.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/cpu_defines.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/ctype_base.h \
@@ -145,6 +151,7 @@ CMakeFiles/OpenGLProject.dir/src/main.cpp.obj: src/main.cpp \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/os_defines.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/new \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/ostream \
+  c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/sstream \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/stdexcept \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/stdlib.h \
   c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/streambuf \
@@ -691,6 +698,10 @@ c:/mingw/include/wincon.h:
 
 thirdparty/glm/glm/detail/type_half.hpp:
 
+thirdparty/glm/glm/detail/type_vec2.hpp:
+
+c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/codecvt.h:
+
 c:/mingw/include/ctype.h:
 
 thirdparty/glm/glm/detail/type_half.inl:
@@ -853,6 +864,8 @@ c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/exception_defines.h:
 
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/exception_ptr.h:
 
+c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/fstream.tcc:
+
 thirdparty/glm/glm/ext/vector_double4_precision.hpp:
 
 thirdparty/glm/glm/ext/matrix_float2x4.hpp:
@@ -866,6 +879,8 @@ c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/hash_bytes.h:
 thirdparty/glm/glm/ext/vector_double3.hpp:
 
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/istream.tcc:
+
+c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/basic_file.h:
 
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/locale_classes.h:
 
@@ -904,6 +919,8 @@ thirdparty/glm/glm/mat2x3.hpp:
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/ptr_traits.h:
 
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/range_access.h:
+
+c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/bits/sstream.tcc:
 
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/ext/string_conversions.h:
 
@@ -1001,6 +1018,8 @@ c:/mingw/include/basetsd.h:
 
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/ext/type_traits.h:
 
+c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/fstream:
+
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/initializer_list:
 
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/iosfwd:
@@ -1019,6 +1038,8 @@ thirdparty/glm/glm/ext/vector_double2_precision.hpp:
 
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/c++config.h:
 
+c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/c++io.h:
+
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/c++locale.h:
 
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/cpu_defines.h:
@@ -1036,6 +1057,8 @@ c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/mingw32/bits/gthr.h:
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/new:
 
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/ostream:
+
+c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/sstream:
 
 c:/mingw/lib/gcc/mingw32/6.3.0/include/c++/stdexcept:
 
@@ -1148,8 +1171,6 @@ thirdparty/glm/glm/detail/type_quat.hpp:
 thirdparty/glm/glm/ext/vector_float3.hpp:
 
 thirdparty/glm/glm/detail/type_quat.inl:
-
-thirdparty/glm/glm/detail/type_vec2.hpp:
 
 thirdparty/glm/glm/detail/type_vec3.hpp:
 
