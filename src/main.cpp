@@ -1119,14 +1119,33 @@ void create_BVHs(const std::vector<BVH>& BVHs, GLuint& BVHSSBO, GLuint shaderPro
     glUseProgram(shaderProgram);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
+//For each bucket split, do the split and return 2 BVHs
+//calc  the min and max coords for each of the splits 
+//check cost function for each of the BVHs
+//divide again based on recursion
 
-void SAH_BVH(const std::vector<Triangle>& triangle_arr){
+//For each bucket split, do the split and return 2 BVHs
+//calc  the min and max coords for each of the splits 
+//check cost function for each of the BVHs
+//add them to a min heap then we can extract the min BVh from the heap 
+
+//return the best BVH from the OG BVH split and then wrap this func in a for loop to cover the BVH split until 4 primitves
+
+
+BVH SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh){
     uint8_t num_buckets = 16;
+    BVH best_bvh;
+    std::vector<glm::vec3> centroids;
     for(int i {0}; i<triangle_arr.size(); i++){
-        glm::vec3 centroid = (triangle_arr[i].a + triangle_arr[i].b + triangle_arr[i].c)*0.5;
-            
-
+        glm::vec3 centroid = glm::vec3(triangle_arr[i].a + triangle_arr[i].b + triangle_arr[i].c)*0.5;
+        centroids.emplace_back(centroid);
     }
+    float step;
+    for(int i{0};  i<num_buckets; i++){
+        step = BVH.min
+    }
+
+    return best_bvh;
 }
 
 
