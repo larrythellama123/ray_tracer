@@ -1132,21 +1132,139 @@ void create_BVHs(const std::vector<BVH>& BVHs, GLuint& BVHSSBO, GLuint shaderPro
 //return the best BVH from the OG BVH split and then wrap this func in a for loop to cover the BVH split until 4 primitves
 
 
+
+
+
 BVH SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh){
     uint8_t num_buckets = 16;
-    BVH best_bvh;
+    BVH best_BVH;
+    float best_cost_function = 1e10;
     std::vector<glm::vec3> centroids;
     for(int i {0}; i<triangle_arr.size(); i++){
         glm::vec3 centroid = glm::vec3(triangle_arr[i].a + triangle_arr[i].b + triangle_arr[i].c)*0.5;
         centroids.emplace_back(centroid);
     }
-    float step;
+    //split along the z-axis
+    float step_Z = (bvh.max.z -bvh.min.z)/(num_buckets-1);
+    float step_X = (bvh.max.x -bvh.min.x)/(num_buckets-1); 
+    float step_Y = (bvh.max.y -bvh.min.y)/(num_buckets-1); 
+
+
+    
+
+    glm::vec3 extent_bvh = bvh.max -bvh.min;
+    float parent_area = extent_bvh.x*extent_bvh.y + extent_bvh.y*extent_bvh.z + extent_bvh.z*extent_bvh.x;
+.
+    //split across z-axis first
     for(int i{0};  i<num_buckets; i++){
-        step = BVH.min
+        //use 15 parititons to split 16 buckets
+        //For each split check the cost function of the other 2 buckets 
+        // keep track of which BVH had the best cost function
+        BVH bvh_tmp_1;
+        bvh_tmp_1.max = vec4(bvh.max.x,bvh.max.y,bvh.min.z+step_Z*(i+1),1.0f);
+        bvh_tmp_1.min = bvh.min;
+        glm::vec3 extent_bvh_1 = bvh_tmp_1.max - bvh_tmp_1.min;
+        float child_area_1 = extent_bvh_1.x*extent_bvh_1.y + extent_bvh_1.y*extent_bvh_1.z + extent_bvh_1.z*extent_bvh_1.x;
+
+        BVH bvh_tmp_2;
+        bvh_tmp_2.min = bvh_tmp_1.max;
+        bvh_tmp_2.max = bvh.max;
+        glm::vec3 extent_bvh_2 = bvh_tmp_2.max - bvh_tmp_2.min;
+        float area = extent_bvh_2.x*extent_bvh_2.y + extent_bvh_2.y*extent_bvh_2.z + extent_bvh_2.z*extent_bvh_2.x;
+        //set the z boundary for this partition
+        float boundary_Z = bvh.min.z+step_Z*(i+1);
+        
+        float boundary_Z = bvh.min +  vec4(0.0f,0.0f,step_Z*(i+1),0.0f);
+        float boundary_X = bvh.min +  vec4(step_X*(i+1),0.0f,0.0f,0.0f);
+        float boundary_Y = bvh.min +  vec4(0.0f,step_Y*(i+1),0.0f,0.0f);
+
+        //ratio
+        float SAR_1 = child_area_1/parent_area;
+        float SAR_2 = child_area_2/parent_area;
+        
+        uint8_t count_bvh_tmp_1 = 0;
+        uint8_t count_bvh_tmp_2 = 0;
+
+        //check number of centroids in each partition
+        for(int j{0};  j<centroids.size(); j++){
+            if (centroids[j].z < boundary_Z){
+                count_bvh_tmp_1 += 1;
+            }
+            else{
+                count_bvh_tmp_2 += 1;
+            }
+        }
+        float cost_function = 0.125 + SAR_1*count_bvh_tmp_1 + SAR_2*count_bvh_tmp_2;
+        if(cost_function < best_cost_function){
+            best_cost_function = cost_fucntion;
+            if(count_bvh_tmp_2>count_bvh_tmp_1){
+                best_BVH = bvh_tmp_2; 
+            }
+            else{
+                best_BVH = bvh_tmp_1;
+            }
+        }
     }
 
     return best_bvh;
 }
+
+BVH SplittingAndCost(vec4 bvh_tmp_1_max, float boundary, float best_cost_function, BVH best_BVH, BVH bvh, float parent_area, int[] flag){
+        //use 15 parititons to split 16 buckets
+        //For each split check the cost function of the other 2 buckets 
+        // keep track of which BVH had the best cost function
+        BVH bvh_tmp_1;
+        bvh_tmp_1.max = bvh_tmp_1_max;
+        bvh_tmp_1.min = bvh.min;
+        glm::vec3 extent_bvh_1 = bvh_tmp_1.max - bvh_tmp_1.min;
+        float child_area_1 = extent_bvh_1.x*extent_bvh_1.y + extent_bvh_1.y*extent_bvh_1.z + extent_bvh_1.z*extent_bvh_1.x;
+
+        BVH bvh_tmp_2;
+        bvh_tmp_2.min = bvh_tmp_1.max;
+        bvh_tmp_2.max = bvh.max;
+        glm::vec3 extent_bvh_2 = bvh_tmp_2.max - bvh_tmp_2.min;
+        float child_area_2 = extent_bvh_2.x*extent_bvh_2.y + extent_bvh_2.y*extent_bvh_2.z + extent_bvh_2.z*extent_bvh_2.x;
+
+        
+        float boundary_Z = bvh.min +  vec4(0.0f,0.0f,step_Z*(i+1),0.0f);
+        float boundary_X = bvh.min +  vec4(step_X*(i+1),0.0f,0.0f,0.0f);
+        float boundary_Y = bvh.min +  vec4(0.0f,step_Y*(i+1),0.0f,0.0f);
+
+        //ratio
+        float SAR_1 = child_area_1/parent_area;
+        float SAR_2 = child_area_2/parent_area;
+        
+        uint8_t count_bvh_tmp_1 = 0;
+        uint8_t count_bvh_tmp_2 = 0;
+
+        float centroid = 0;
+
+
+        //check number of centroids in each partition
+        for(int j{0};  j<centroids.size(); j++){
+            if (centroids[j].z < boundary_Z){
+                count_bvh_tmp_1 += 1;
+            }
+            else{
+                count_bvh_tmp_2 += 1;
+            }
+        }
+        float cost_function = 0.125 + SAR_1*count_bvh_tmp_1 + SAR_2*count_bvh_tmp_2;
+        if(cost_function < best_cost_function){
+            best_cost_function = cost_function;
+            if(count_bvh_tmp_2>count_bvh_tmp_1){
+                best_BVH = bvh_tmp_2; 
+            }
+            else{
+                best_BVH = bvh_tmp_1;
+            }
+        }
+}
+
+uint count_centroids(const centroids){
+
+}
+
 
 
 
