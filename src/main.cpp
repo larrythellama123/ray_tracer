@@ -84,7 +84,7 @@ void GrowBVHVertice(BVH bvh, vec4 vertice){
     bvh.max = max(bvh.max, vertice);
     bvh.centre = (bvh.min+bvh.max)/2;
 };
-BVH GrowBVHTriangle(std::vector<Triangle> triangles){
+BVH GrowBVHTriangle(const std::vector<Triangle>& triangles){
     BVH bvh;
     for(int i {0};  i < triangles.size(); i++){
         GrowBVHVertice(bvh, triangles[i].a);
@@ -479,6 +479,9 @@ in vec2 TexCoord;
 int maxBounceCount = 5;
 
 #define LIGHT_SOURCE 2
+#define NODE 3
+#define LEAF_NODE 4
+
 
 struct RayTracingMaterial
 {
@@ -514,10 +517,13 @@ layout(std430, binding = 1) readonly buffer TriangleBuffer {
 };
 
 layout(std430, binding = 2) readonly buffer BVHBuffer {
-    BVH BVHs[]; 
+    BVHNode all_BVHs[]; 
 };
 
-
+layout(std430, binding = 3) buffer OffsetBuffer {
+    uint list_offsets[]; 
+    uint list_sizes[];   
+};
 
 struct HitInfo{
     bool did_hit;
@@ -541,7 +547,6 @@ struct BVH{
 struct BVHNode{
     BVH bvh;
     int left_child;
-    int right_child;
 }
 
 
@@ -670,45 +675,43 @@ HitInfo RayTriangle(const Ray ray, const Triangle tri)
         return hit_info;
 };
 
-HitInfo RayAABB(const Ray ray, BVHNode bvh_node){
+HitInfo RayAABB(Ray ray, BVHNode bvh_node){
     HitInfo hit_info;
-    BVHNode bvh_node_list[2]; 
+    BVHNode right_bvh_node;
+    while (bvh_node.flag != LEAF_NODE){
 
-    whil(bvh_node_list){
-        float x_min = bvh_node.min.x;
-        float x_max = bvh_node.max.x;
-        float y_min = bvh_node.min.y;
-        float y_max = bvh_node.max.y;
-        float z_min = bvh_node.min.z;
-        float z_max = bvh_node.max.z;
+        vec3 inverse_dir = 1.0 / ray.dir;
+        double tx1 = (bvh_node.bvh.min.x - ray.origin.x)*inverse_dir.x;
+        double tx2 = (bvh_node.bvh.max.x - ray.origin.x)*inverse_dir.x;
 
-        float tx1 = x_min - ray.origin.x;
-        float tx2 = x_max - ray.origin.x;
+        double tmin = min(tx1, tx2);
+        double tmax = max(tx1, tx2);
 
-        float ty1 = y_min - ray.origin.y;
-        float ty2 = y_max - ray.origin.y;
+        double ty1 = (bvh_node.bvh.min.y - ray.origin.y)*inverse_dir.y;
+        double ty2 = (bvh_node.bvh.max.y - ray.origin.y)*inverse_dir.y;
 
-        float tz1 = z_min - ray.origin.z;
-        float tz2 = z_max - ray.origin.z;
+        tmin = max(tmin, min(ty1, ty2));
+        tmax = min(tmax, max(ty1, ty2));
 
-        float tmin = max(tx1,ty1,tz1);
-        float tmax = min(tx2,ty2,tz2);
+        double tz1 = (bvh_node.bvh.min.z - ray.origin.z)*inverse_dir.z;
+        double tz2 = (bvh_node.bvh.max.z - ray.origin.z)*inverse_dir.z;
 
-        if(tmin < tmax){
-            float tmp = tmax;
-            tmax = tmin;
-            tmin = tmax;
+        tmin = max(tmin, min(tz1, tz2));
+        tmax = min(tmax, max(tz1, tz2));
+
+        if (tmax >= tmin){
+            bvh_node = bvh_node_list[bvh_node.left_child];
+            right_bvh_node = bvh_node_list[bvh_node.left_child+1];
         }
-
-        if(tmax >0){
-            bvh_node_list
+        else{
+            bvh_node = right_bvh_node;
         }
-    } 
-    
-
-
-
-}
+    }
+    for(int i=bvh_node.bvh.primitve_index; i < bvh_node.bvh.primitve_index + bvh_node.bvh.offset; i++){
+        hit_info = RayTriangle(Ray ray, triangles[i]);
+    }
+    return hit_info;
+};
 
 vec4 GetEnvironmentLight(Ray ray){
     vec4 emitted_light = vec4(0.0, 0.0, 0.0, 0.0);
@@ -746,19 +749,38 @@ HitInfo CalculateRayCollision(Ray ray){
             closest_hit_info = hit_info;
         }        
     }
-    for(int i=0; i < triangles.length(); ++i){
-        hit_info = RayTriangle(ray, triangles[i]);
+    //split up into BVH object groups
+    int size = 0;
+    int list_size_idx =0;
+
+    while(i < all_BVHs.length()){
+        BVHNode bvh_node_list[10000];
+        bvh_node_list[i] = all_BVHs[i];
+        i++;
+        size++;
+        if(size == list_size[list_size_idx]){
+            size = 0;
+            list_size_idx++;
+        }
+        hit_info = RayAABB(ray,  bvh_node_list);
         if(hit_info.did_hit && hit_info.dst<distance){
             distance = hit_info.dst;
             closest_hit_info = hit_info;
-        }    
+        }
     }
+    
+    // for(int i=0; i < triangles.length(); ++i){
+    //     hit_info = RayTriangle(ray, triangles[i]);
+    //     if(hit_info.did_hit && hit_info.dst<distance){
+    //         distance = hit_info.dst;
+    //         closest_hit_info = hit_info;
+    //     }    
+    // }
     return closest_hit_info;
 }
 
 
 vec4 Trace(inout uint state){
-    BVH bvh
     vec2 uv = TexCoord * 2.0 - 1.0;
     vec4 incoming_light = vec4(0.0f,0.0f,0.0f,0.0f);
     vec4 ray_color = vec4(1.0f,1.0f,1.0f,1.0f);
@@ -1021,17 +1043,26 @@ int main() {
     GLuint sphereSSBO = 0;
     GLuint triangleSSBO = 0;
     GLuint BVHSSBO = 0;
+    GLuint LSSSBO = 0;
+
 
 
 
     create_spheres(sphere_arr, sphereSSBO,shaderProgram);
     create_triangles(tri_arr, triangleSSBO, shaderProgram);
     
-    BVH bvh = GrowBVHTriangle(const std::vector<Triangle>& triangles);
-    std::vector<BVH> BVHs;
-    BVHs.push_back(bvh);
-    create_BVHs(BVHs, BVHSSBO, shaderProgram); 
-    SAH_BVH();
+    BVH bvh = GrowBVHTriangle(tri_arr);
+    std::vector<BVHNode> bvh_node_list = SAH_BVH(tri_arr,bvh);
+    std::vector<BVHNode> all_BVH_nodes;
+    std::vector<int> list_size;
+
+    for(int i{0}; i<bvh_node_list.size(); i++){
+        all_bvh_nodes.push_back(bvh_node_list[i]);
+    }
+    list_size.push_back(all_BVH_nodes.size());
+    create_BVH_nodes(all_BVH_nodes, BVHSSBO, shaderProgram); 
+    create_list_size(list_size, LSSSBO, shaderProgram); 
+
 
     // Create fullscreen quad (covers entire screen in NDC coordinates)
     float quadVertices[] = {
@@ -1164,36 +1195,34 @@ void create_triangles(const std::vector<Triangle>& triangles, GLuint& triangleSS
 
 
 
-void create_BVHs(const std::vector<BVH>& BVHs, GLuint& BVHSSBO, GLuint shaderProgram) {
+void create_BVH_nodes(const std::vector<BVH>& BVHs, GLuint& BVHSSBO, GLuint shaderProgram) {
 
     if (BVHSSBO == 0) glGenBuffers(1, &BVHSSBO);
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, BVHSSBO);    
-    glBufferData(GL_SHADER_STORAGE_BUFFER, BVHs.size() * sizeof(BVH), 
-                 BVHs.data(), GL_STATIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, BVHs.size() * sizeof(BVH), BVHs.data(), GL_STATIC_DRAW);
     
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, BVHSSBO);
     glUseProgram(shaderProgram);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
-//For each bucket split, do the split and return 2 BVHs
-//calc  the min and max coords for each of the splits 
-//check cost function for each of the BVHs
-//divide again based on recursion
 
-//For each bucket split, do the split and return 2 BVHs
-//calc  the min and max coords for each of the splits 
-//check cost function for each of the BVHs
-//return the arr[2] of BVHs from the best split
-//add these 2 BVHs to the parent node, also add them to the stack
-//pop the BVH from the stack and then expand it then repeat those same steps
-//keep doing this until there are 4 primitives in the BVH
+void create_list_size(const std::vector<int>& list_size, GLuint& LSSSBO, GLuint shaderProgram) {
 
-//return the best BVH from the OG BVH split and then wrap this func in a for loop to cover the BVH split until 4 primitves
+    if (LSSSBO == 0) glGenBuffers(1, &LSSSBO);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, LSSSBO);    
+    glBufferData(GL_SHADER_STORAGE_BUFFER, list_size.size() * sizeof(int), list_size.data(), GL_STATIC_DRAW);
+    
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, LSSSBO);
+    glUseProgram(shaderProgram);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
 
 
 
-BVHNode* SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh){
+
+std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh){
     uint8_t num_buckets = 16;
     float best_cost_function = 1e10;
     BVH best_bvh_pair[2];   
@@ -1262,10 +1291,8 @@ BVHNode* SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh){
     return bvh_node_list;
 }
 
-BVH* SplittingAndCost(vec4 bvh_tmp_1_max, float boundary, float& best_cost_function, BVH& best_BVH, BVH& bvh, float parent_area, int[] flag){
-        //use 15 parititons to split 16 buckets
-        //For each split check the cost function of the other 2 buckets 
-        // keep track of which BVH had the best cost function
+BVH* SplittingAndCost(vec4 bvh_tmp_1_max, float boundary, float& best_cost_function, BVH& best_BVH, BVH& bvh, float parent_area, int *flag){
+
         BVH bvh_tmp_1;
         bvh_tmp_1.max = bvh_tmp_1_max;
         bvh_tmp_1.min = bvh.min;
