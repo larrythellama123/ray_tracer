@@ -16,7 +16,12 @@
 #include <iostream>
 #include <sstream> 
 #include <string> 
+#include <deque>
 #define LIGHT_SOURCE 2
+#define LEAF_NODE 3
+#define NODE 4
+
+
 // ability to change emission strength of light source
 //  ability to show soft colours of neighboring objects on the other objects
 
@@ -63,7 +68,17 @@ struct BVH{
     glm::vec4 min = vec4(1e10,1e10,1e10,1.0f);
     glm::vec4 max = vec4(0.0f,0.0f,0.0f,1.0f);
     glm::vec4 centre = min;
+    int offset;
+    int primitive_index;
+    int count;
 };
+
+struct BVHNode{
+    BVH bvh;
+    int left_child;
+    int flag = NODE;
+};
+
 void GrowBVHVertice(BVH bvh, vec4 vertice){
     bvh.min = min(bvh.min, vertice);
     bvh.max = max(bvh.max, vertice);
@@ -524,7 +539,9 @@ struct BVH{
 };
 
 struct BVHNode{
-
+    BVH bvh;
+    int left_child;
+    int right_child;
 }
 
 
@@ -652,6 +669,46 @@ HitInfo RayTriangle(const Ray ray, const Triangle tri)
 
         return hit_info;
 };
+
+HitInfo RayAABB(const Ray ray, BVHNode bvh_node){
+    HitInfo hit_info;
+    BVHNode bvh_node_list[2]; 
+
+    whil(bvh_node_list){
+        float x_min = bvh_node.min.x;
+        float x_max = bvh_node.max.x;
+        float y_min = bvh_node.min.y;
+        float y_max = bvh_node.max.y;
+        float z_min = bvh_node.min.z;
+        float z_max = bvh_node.max.z;
+
+        float tx1 = x_min - ray.origin.x;
+        float tx2 = x_max - ray.origin.x;
+
+        float ty1 = y_min - ray.origin.y;
+        float ty2 = y_max - ray.origin.y;
+
+        float tz1 = z_min - ray.origin.z;
+        float tz2 = z_max - ray.origin.z;
+
+        float tmin = max(tx1,ty1,tz1);
+        float tmax = min(tx2,ty2,tz2);
+
+        if(tmin < tmax){
+            float tmp = tmax;
+            tmax = tmin;
+            tmin = tmax;
+        }
+
+        if(tmax >0){
+            bvh_node_list
+        }
+    } 
+    
+
+
+
+}
 
 vec4 GetEnvironmentLight(Ray ray){
     vec4 emitted_light = vec4(0.0, 0.0, 0.0, 0.0);
@@ -1111,7 +1168,7 @@ void create_BVHs(const std::vector<BVH>& BVHs, GLuint& BVHSSBO, GLuint shaderPro
 
     if (BVHSSBO == 0) glGenBuffers(1, &BVHSSBO);
     
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, BVHSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, BVHSSBO);    
     glBufferData(GL_SHADER_STORAGE_BUFFER, BVHs.size() * sizeof(BVH), 
                  BVHs.data(), GL_STATIC_DRAW);
     
@@ -1127,19 +1184,21 @@ void create_BVHs(const std::vector<BVH>& BVHs, GLuint& BVHSSBO, GLuint shaderPro
 //For each bucket split, do the split and return 2 BVHs
 //calc  the min and max coords for each of the splits 
 //check cost function for each of the BVHs
-//add them to a min heap then we can extract the min BVh from the heap 
+//return the arr[2] of BVHs from the best split
+//add these 2 BVHs to the parent node, also add them to the stack
+//pop the BVH from the stack and then expand it then repeat those same steps
+//keep doing this until there are 4 primitives in the BVH
 
 //return the best BVH from the OG BVH split and then wrap this func in a for loop to cover the BVH split until 4 primitves
 
 
 
-
-
-BVH SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh){
+BVHNode* SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh){
     uint8_t num_buckets = 16;
-    BVH best_BVH;
     float best_cost_function = 1e10;
+    BVH best_bvh_pair[2];   
     std::vector<glm::vec3> centroids;
+
     for(int i {0}; i<triangle_arr.size(); i++){
         glm::vec3 centroid = glm::vec3(triangle_arr[i].a + triangle_arr[i].b + triangle_arr[i].c)*0.5;
         centroids.emplace_back(centroid);
@@ -1149,37 +1208,61 @@ BVH SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh){
     float step_X = (bvh.max.x -bvh.min.x)/(num_buckets-1); 
     float step_Y = (bvh.max.y -bvh.min.y)/(num_buckets-1); 
 
-
-    
-
     glm::vec3 extent_bvh = bvh.max -bvh.min;
     float parent_area = extent_bvh.x*extent_bvh.y + extent_bvh.y*extent_bvh.z + extent_bvh.z*extent_bvh.x;
-.
-    while()
-    for(int i{0};  i<num_buckets; i++){
-        //use 15 parititons to split 16 buckets
-        //For each split check the cost function of the other 2 buckets 
-        // keep track of which BVH had the best cost function
-        
-        float boundary_Z = bvh.min.z + step_Z*(i+1);
-        float boundary_X = bvh.min.x +  step_X*(i+1);
-        float boundary_Y = bvh.min.y +  step_Y*(i+1);
 
-        SplittingAndCost(vec4(bvh.max.x,bvh.max.y,boundary_Z,1.0f),boundary_Z, best_cost_function, best_BVH, bvh, parent_area, flag);
-        SplittingAndCost(vec4(boundary_X,bvh.max.y,bvh.max.z,1.0f),boundary_X, best_cost_function, best_BVH, bvh, parent_area, flag);
-        SplittingAndCost(vec4(bvh.max.x,boundary_Y,bvh.max.z,1.0f), boundary_Y, best_cost_function, best_BVH, bvh, parent_area, flag);
+    std::deque<BVH> BVH_list;
+    std::vector<BVHNode> bvh_node_list;
 
-        //count number of tris in final BVH
-        new_centroids;
-        for(int j{0};  j<centroids.size(); j++){
-            if 
-        } 
+    bvh.offset = centroids.size();
+    bvh.primitive_index = 0;
+
+    BVH_list.push_back(bvh);
+    while(!BVH_list.empty()){
+        bvh = BVH_list[0];
+        BVH_list.pop_front();
+
+        if(bvh.count < 4){
+            BVHNode leaf_node = {bvh, -1, LEAF_NODE};
+            bvh_node_list.push_back(leaf_node);
+            continue;
+        }
+
+        for(int i{0};  i<num_buckets; i++){
+            float boundary_Z = bvh.min.z + step_Z*(i+1);
+            float boundary_X = bvh.min.x +  step_X*(i+1);
+            float boundary_Y = bvh.min.y +  step_Y*(i+1);
+
+            bool flag[3];
+            flag[0] = true;
+            flag[1] = false
+            flag[2] = false;
+
+            SplittingAndCost(glm::vec4(bvh.max.x,bvh.max.y,boundary_Z,1.0f),boundary_Z, best_cost_function, best_bvh_pair, bvh, parent_area, flag);
+            flag[0] = false;
+            flag[1] = true;
+            flag[2] = false;
+
+            SplittingAndCost(glm::vec4(boundary_X,bvh.max.y,bvh.max.z,1.0f),boundary_X, best_cost_function, best_bvh_pair, bvh, parent_area, flag);
+
+            flag[0] = false;
+            flag[1] = false;
+            flag[2] = true;
+
+            SplittingAndCost(glm::vec4(bvh.max.x,boundary_Y,bvh.max.z,1.0f), boundary_Y, best_cost_function,  best_bvh_pair, bvh, parent_area, flag);
+        }
+        int left_child = bvh_node_list.size();
+        BVHNode parent_node = {bvh, left_child, NODE};
+        bvh_node_list.push_back(parent_node);
+        BVH_list.push_back(best_bvh_pair[0]);
+        BVH_list.push_back(best_bvh_pair[1]);
+
     }
 
-    return best_bvh;
+    return bvh_node_list;
 }
 
-BVH SplittingAndCost(vec4 bvh_tmp_1_max, float boundary, float& best_cost_function, BVH& best_BVH, BVH& bvh, float parent_area, int[] flag){
+BVH* SplittingAndCost(vec4 bvh_tmp_1_max, float boundary, float& best_cost_function, BVH& best_BVH, BVH& bvh, float parent_area, int[] flag){
         //use 15 parititons to split 16 buckets
         //For each split check the cost function of the other 2 buckets 
         // keep track of which BVH had the best cost function
@@ -1200,33 +1283,49 @@ BVH SplittingAndCost(vec4 bvh_tmp_1_max, float boundary, float& best_cost_functi
         float SAR_1 = child_area_1/parent_area;
         float SAR_2 = child_area_2/parent_area;
         
-        uint count_bvh_tmp_1 = 0;
-        uint count_bvh_tmp_2 = 0;
+        int count_bvh_tmp_1 = 0;
+        int count_bvh_tmp_2 = 0;
+
 
         //check number of centroids in each partition
-        for(int j{0};  j<centroids.size(); j++){
-            count_centroids(centroids[j].z, count_bvh_tmp_1, count_bvh_tmp_2);
+        auto is_in_BVH = [](float centroid, uint& count_bvh_tmp_1, uint& count_bvh_tmp_2, float boundary){ return centroid < boundary; };
+        std::list<int>::iterator start = std::next(bvh.primitive_index, index);
+
+        for(int j{bvh.primitive_index};  j<bvh.primitive_index+bvh.offset; j++){
+            if (flag[0]){
+                std::vector<BVH>::iterator partition_point = std::partition(
+                    v.begin() + bvh.primitive_index, 
+                    v.begin() + bvh.primitive_index + bvh.offset, 
+                    is_in_BVH(centroids[j].x, count_bvh_tmp_1, count_bvh_tmp_2, boundary)
+                );
+            }
+          
+            else if (flag[1])
+                std::vector<BVH>::iterator partition_point = std::partition(
+                    v.begin() + bvh.primitive_index, 
+                    v.begin() + bvh.primitive_index + bvh.offset, 
+                    is_in_BVH(centroids[j].y, count_bvh_tmp_1, count_bvh_tmp_2, boundary)
+                );
+            else
+                std::vector<BVH>::iterator partition_point = std::partition(
+                    v.begin() + bvh.primitive_index, 
+                    v.begin() + bvh.primitive_index + bvh.offset, 
+                    is_in_BVH(centroids[j].z, count_bvh_tmp_1, count_bvh_tmp_2, boundary)
+                );
+                
+            count_bvh_tmp_1 = static_cast<int>(partition_point - bvh.primitive_index);
+            count_bvh_tmp_2 = static_cast<int>(bvh.primitive_index+bvh.offset - partition_point);
+
         }
+        bvh_tmp_1.count = count_bvh_tmp_1;
+        bvh_tmp_2.count = count_bvh_tmp_2;
+
+
         float cost_function = 0.125 + SAR_1*count_bvh_tmp_1 + SAR_2*count_bvh_tmp_2;
         if(cost_function < best_cost_function){
             best_cost_function = cost_function;
-            if(count_bvh_tmp_2>count_bvh_tmp_1){
-                best_BVH = bvh_tmp_2; 
-            }
-            else{
-                best_BVH = bvh_tmp_1;
-            }
         }
-        return best_BVH;
-}
-
-void count_centroids(float centroid, uint& count_bvh_tmp_1, uint& count_bvh_tmp_2, float boundary){
-    if (centroid < boundary){
-        count_bvh_tmp_1 += 1;
-    }
-    else{
-        count_bvh_tmp_2 += 1;
-    }
+        return [bvh_tmp_1,bvh_tmp_2];
 }
 
 
