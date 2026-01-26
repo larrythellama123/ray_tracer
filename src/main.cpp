@@ -17,6 +17,7 @@
 #include <sstream> 
 #include <string> 
 #include <deque>
+#include <algorithm>
 #define LIGHT_SOURCE 2
 #define LEAF_NODE 3
 #define NODE 4
@@ -65,8 +66,8 @@ struct Triangle{
 };
 
 struct BVH{
-    glm::vec4 min = vec4(1e10,1e10,1e10,1.0f);
-    glm::vec4 max = vec4(0.0f,0.0f,0.0f,1.0f);
+    glm::vec4 min = glm::vec4(1e10,1e10,1e10,1.0f);
+    glm::vec4 max = glm::vec4(0.0f,0.0f,0.0f,1.0f);
     glm::vec4 centre = min;
     int offset;
     int primitive_index;
@@ -79,10 +80,10 @@ struct BVHNode{
     int flag = NODE;
 };
 
-void GrowBVHVertice(BVH bvh, vec4 vertice){
+void GrowBVHVertice(BVH bvh, glm::vec4 vertice){
     bvh.min = min(bvh.min, vertice);
     bvh.max = max(bvh.max, vertice);
-    bvh.centre = (bvh.min+bvh.max)/2;
+    bvh.centre = (bvh.min+bvh.max) * 0.5f;
 };
 BVH GrowBVHTriangle(const std::vector<Triangle>& triangles){
     BVH bvh;
@@ -91,7 +92,7 @@ BVH GrowBVHTriangle(const std::vector<Triangle>& triangles){
         GrowBVHVertice(bvh,triangles[i].b);
         GrowBVHVertice(bvh,triangles[i].c);
     }
-    return BVH;
+    return bvh;
 };
 
 
@@ -116,6 +117,11 @@ HitInfo RaySphere(Ray ray,  float sphereCenter, float sphereRadius){
 
 
 
+std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh);
+
+void create_BVH_nodes(const std::vector<BVHNode>& all_bvh_nodes, GLuint& BVHSSBO, GLuint shaderProgram) ;
+void create_list_size(const std::vector<int>& list_size, GLuint& LSSSBO, GLuint shaderProgram) ;
+BVH* SplittingAndCost(glm::vec4 bvh_tmp_1_max, float boundary, float& best_cost_function, BVH& best_BVH, BVH& best_bvh_pair, float parent_area, int *flag, std::vector<glm::vec3>& centroids);
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 
@@ -1053,14 +1059,14 @@ int main() {
     
     BVH bvh = GrowBVHTriangle(tri_arr);
     std::vector<BVHNode> bvh_node_list = SAH_BVH(tri_arr,bvh);
-    std::vector<BVHNode> all_BVH_nodes;
+    std::vector<BVHNode> all_bvh_nodes;
     std::vector<int> list_size;
 
     for(int i{0}; i<bvh_node_list.size(); i++){
         all_bvh_nodes.push_back(bvh_node_list[i]);
     }
-    list_size.push_back(all_BVH_nodes.size());
-    create_BVH_nodes(all_BVH_nodes, BVHSSBO, shaderProgram); 
+    list_size.push_back(all_bvh_nodes.size());
+    create_BVH_nodes(all_bvh_nodes, BVHSSBO, shaderProgram); 
     create_list_size(list_size, LSSSBO, shaderProgram); 
 
 
@@ -1195,12 +1201,12 @@ void create_triangles(const std::vector<Triangle>& triangles, GLuint& triangleSS
 
 
 
-void create_BVH_nodes(const std::vector<BVH>& BVHs, GLuint& BVHSSBO, GLuint shaderProgram) {
+void create_BVH_nodes(const std::vector<BVHNode>& all_bvh_nodes, GLuint& BVHSSBO, GLuint shaderProgram) {
 
     if (BVHSSBO == 0) glGenBuffers(1, &BVHSSBO);
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, BVHSSBO);    
-    glBufferData(GL_SHADER_STORAGE_BUFFER, BVHs.size() * sizeof(BVH), BVHs.data(), GL_STATIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, all_bvh_nodes.size() * sizeof(BVH), all_bvh_nodes.data(), GL_STATIC_DRAW);
     
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, BVHSSBO);
     glUseProgram(shaderProgram);
@@ -1225,11 +1231,11 @@ void create_list_size(const std::vector<int>& list_size, GLuint& LSSSBO, GLuint 
 std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh){
     uint8_t num_buckets = 16;
     float best_cost_function = 1e10;
-    BVH best_bvh_pair[2];   
+    BVH *best_bvh_pair;   
     std::vector<glm::vec3> centroids;
 
     for(int i {0}; i<triangle_arr.size(); i++){
-        glm::vec3 centroid = glm::vec3(triangle_arr[i].a + triangle_arr[i].b + triangle_arr[i].c)*0.5;
+        glm::vec3 centroid = glm::vec3(triangle_arr[i].a)*0.33f +  glm::vec3(triangle_arr[i].b)*0.33f  +  glm::vec3(triangle_arr[i].c)*0.33f;
         centroids.emplace_back(centroid);
     }
     //split along the z-axis
@@ -1264,21 +1270,21 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
 
             bool flag[3];
             flag[0] = true;
-            flag[1] = false
+            flag[1] = false;
             flag[2] = false;
 
-            SplittingAndCost(glm::vec4(bvh.max.x,bvh.max.y,boundary_Z,1.0f),boundary_Z, best_cost_function, best_bvh_pair, bvh, parent_area, flag);
+            best_bvh_pair = SplittingAndCost(glm::vec4(bvh.max.x,bvh.max.y,boundary_Z,1.0f),boundary_Z, best_cost_function, bvh, parent_area, flag, centroids);
             flag[0] = false;
             flag[1] = true;
             flag[2] = false;
 
-            SplittingAndCost(glm::vec4(boundary_X,bvh.max.y,bvh.max.z,1.0f),boundary_X, best_cost_function, best_bvh_pair, bvh, parent_area, flag);
+            best_bvh_pair =SplittingAndCost(glm::vec4(boundary_X,bvh.max.y,bvh.max.z,1.0f),boundary_X, best_cost_function, bvh, parent_area, flag, centroids);
 
             flag[0] = false;
             flag[1] = false;
             flag[2] = true;
 
-            SplittingAndCost(glm::vec4(bvh.max.x,boundary_Y,bvh.max.z,1.0f), boundary_Y, best_cost_function,  best_bvh_pair, bvh, parent_area, flag);
+            best_bvh_pair =SplittingAndCost(glm::vec4(bvh.max.x,boundary_Y,bvh.max.z,1.0f), boundary_Y, best_cost_function,  bvh, parent_area, flag, centroids);
         }
         int left_child = bvh_node_list.size();
         BVHNode parent_node = {bvh, left_child, NODE};
@@ -1291,7 +1297,7 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
     return bvh_node_list;
 }
 
-BVH* SplittingAndCost(vec4 bvh_tmp_1_max, float boundary, float& best_cost_function, BVH& best_BVH, BVH& bvh, float parent_area, int *flag){
+BVH* SplittingAndCost(glm::vec4 bvh_tmp_1_max, float boundary, float& best_cost_function, BVH& best_BVH, BVH& bvh, float parent_area, int *flag, std::vector<glm::vec3>& centroids){
 
         BVH bvh_tmp_1;
         bvh_tmp_1.max = bvh_tmp_1_max;
@@ -1315,28 +1321,27 @@ BVH* SplittingAndCost(vec4 bvh_tmp_1_max, float boundary, float& best_cost_funct
 
 
         //check number of centroids in each partition
-        auto is_in_BVH = [](float centroid, uint& count_bvh_tmp_1, uint& count_bvh_tmp_2, float boundary){ return centroid < boundary; };
-        std::list<int>::iterator start = std::next(bvh.primitive_index, index);
+        auto is_in_BVH = [](float centroid, int& count_bvh_tmp_1, int& count_bvh_tmp_2, float boundary){ return centroid < boundary; };
 
         for(int j{bvh.primitive_index};  j<bvh.primitive_index+bvh.offset; j++){
             if (flag[0]){
                 std::vector<BVH>::iterator partition_point = std::partition(
-                    v.begin() + bvh.primitive_index, 
-                    v.begin() + bvh.primitive_index + bvh.offset, 
+                    centroids.begin() + bvh.primitive_index, 
+                    centroids.begin() + bvh.primitive_index + bvh.offset, 
                     is_in_BVH(centroids[j].x, count_bvh_tmp_1, count_bvh_tmp_2, boundary)
                 );
             }
           
             else if (flag[1])
                 std::vector<BVH>::iterator partition_point = std::partition(
-                    v.begin() + bvh.primitive_index, 
-                    v.begin() + bvh.primitive_index + bvh.offset, 
+                    centroids.begin() + bvh.primitive_index, 
+                    centroids.begin() + bvh.primitive_index + bvh.offset, 
                     is_in_BVH(centroids[j].y, count_bvh_tmp_1, count_bvh_tmp_2, boundary)
                 );
             else
                 std::vector<BVH>::iterator partition_point = std::partition(
-                    v.begin() + bvh.primitive_index, 
-                    v.begin() + bvh.primitive_index + bvh.offset, 
+                    centroids.begin() + bvh.primitive_index, 
+                    centroids.begin() + bvh.primitive_index + bvh.offset, 
                     is_in_BVH(centroids[j].z, count_bvh_tmp_1, count_bvh_tmp_2, boundary)
                 );
                 
