@@ -18,9 +18,11 @@
 #include <string> 
 #include <deque>
 #include <algorithm>
+#include <array>
 #define LIGHT_SOURCE 2
 #define LEAF_NODE 3
 #define NODE 4
+
 
 
 // ability to change emission strength of light source
@@ -121,7 +123,9 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
 
 void create_BVH_nodes(const std::vector<BVHNode>& all_bvh_nodes, GLuint& BVHSSBO, GLuint shaderProgram) ;
 void create_list_size(const std::vector<int>& list_size, GLuint& LSSSBO, GLuint shaderProgram) ;
-BVH* SplittingAndCost(glm::vec4 bvh_tmp_1_max, float boundary, float& best_cost_function, BVH& best_BVH, BVH& best_bvh_pair, float parent_area, int *flag, std::vector<glm::vec3>& centroids);
+
+
+std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, float boundary, float& best_cost_function, BVH& bvh, std::array<BVH, 2>  bvh_pair, float parent_area, bool* flag, std::vector<glm::vec3>& centroids);
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 
@@ -514,6 +518,24 @@ struct Triangle{
     RayTracingMaterial material;
 };
 
+
+struct BVH{
+    vec4 min;
+    vec4 max;
+    vec4 centre;
+    int offset;
+    int primitive_index;
+    int count;
+};
+
+struct BVHNode{
+    BVH bvh;
+    int left_child;
+    int flag;
+    
+};
+
+
 layout(std430, binding = 0) readonly buffer SphereBuffer {
     Sphere spheres[]; 
 };
@@ -544,16 +566,6 @@ struct Ray{
     vec3 dir;
 };
 
-struct BVH{
-    vec4 min = vec4(1e10,1e10,1e10,1.0f);
-    vec4 max = vec4(0.0f,0.0f,0.0f,1.0f);
-    vec4 centre = min;
-};
-
-struct BVHNode{
-    BVH bvh;
-    int left_child;
-}
 
 
 float RandomValue(inout uint state)
@@ -681,7 +693,8 @@ HitInfo RayTriangle(const Ray ray, const Triangle tri)
         return hit_info;
 };
 
-HitInfo RayAABB(Ray ray, BVHNode bvh_node){
+HitInfo RayAABB(Ray ray, BVHNode bvh_node_list[1000]){
+    BVHNode bvh_node = bvh_node_list[0];
     HitInfo hit_info;
     BVHNode right_bvh_node;
     while (bvh_node.flag != LEAF_NODE){
@@ -758,21 +771,24 @@ HitInfo CalculateRayCollision(Ray ray){
     //split up into BVH object groups
     int size = 0;
     int list_size_idx =0;
-
+    int bvh_node_idx = 0;
     while(i < all_BVHs.length()){
         BVHNode bvh_node_list[10000];
-        bvh_node_list[i] = all_BVHs[i];
+        bvh_node_list[bvh_node_idx] = all_BVHs[i];
         i++;
         size++;
+        bvh_node_idx++;
         if(size == list_size[list_size_idx]){
             size = 0;
+            bvh_node_idx = 0;
             list_size_idx++;
+            hit_info = RayAABB(ray,  bvh_node_list);
+            if(hit_info.did_hit && hit_info.dst<distance){
+                distance = hit_info.dst;
+                closest_hit_info = hit_info;
+            }
         }
-        hit_info = RayAABB(ray,  bvh_node_list);
-        if(hit_info.did_hit && hit_info.dst<distance){
-            distance = hit_info.dst;
-            closest_hit_info = hit_info;
-        }
+        
     }
     
     // for(int i=0; i < triangles.length(); ++i){
@@ -1231,7 +1247,7 @@ void create_list_size(const std::vector<int>& list_size, GLuint& LSSSBO, GLuint 
 std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh){
     uint8_t num_buckets = 16;
     float best_cost_function = 1e10;
-    BVH *best_bvh_pair;   
+    std::array<BVH,2> best_bvh_pair;   
     std::vector<glm::vec3> centroids;
 
     for(int i {0}; i<triangle_arr.size(); i++){
@@ -1273,18 +1289,18 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
             flag[1] = false;
             flag[2] = false;
 
-            best_bvh_pair = SplittingAndCost(glm::vec4(bvh.max.x,bvh.max.y,boundary_Z,1.0f),boundary_Z, best_cost_function, bvh, parent_area, flag, centroids);
+            best_bvh_pair = SplittingAndCost(glm::vec4(bvh.max.x,bvh.max.y,boundary_Z,1.0f),boundary_Z, best_cost_function, bvh, best_bvh_pair, parent_area, flag, centroids);
             flag[0] = false;
             flag[1] = true;
             flag[2] = false;
 
-            best_bvh_pair =SplittingAndCost(glm::vec4(boundary_X,bvh.max.y,bvh.max.z,1.0f),boundary_X, best_cost_function, bvh, parent_area, flag, centroids);
+            best_bvh_pair = SplittingAndCost(glm::vec4(boundary_X,bvh.max.y,bvh.max.z,1.0f),boundary_X, best_cost_function, bvh, best_bvh_pair, parent_area, flag, centroids);
 
             flag[0] = false;
             flag[1] = false;
             flag[2] = true;
 
-            best_bvh_pair =SplittingAndCost(glm::vec4(bvh.max.x,boundary_Y,bvh.max.z,1.0f), boundary_Y, best_cost_function,  bvh, parent_area, flag, centroids);
+            best_bvh_pair = SplittingAndCost(glm::vec4(bvh.max.x,boundary_Y,bvh.max.z,1.0f), boundary_Y, best_cost_function,  bvh, best_bvh_pair, parent_area, flag, centroids);
         }
         int left_child = bvh_node_list.size();
         BVHNode parent_node = {bvh, left_child, NODE};
@@ -1297,7 +1313,7 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
     return bvh_node_list;
 }
 
-BVH* SplittingAndCost(glm::vec4 bvh_tmp_1_max, float boundary, float& best_cost_function, BVH& best_BVH, BVH& bvh, float parent_area, int *flag, std::vector<glm::vec3>& centroids){
+std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, float boundary, float& best_cost_function, BVH& bvh, std::array<BVH, 2>  bvh_pair, float parent_area, bool* flag, std::vector<glm::vec3>& centroids){
 
         BVH bvh_tmp_1;
         bvh_tmp_1.max = bvh_tmp_1_max;
@@ -1320,33 +1336,59 @@ BVH* SplittingAndCost(glm::vec4 bvh_tmp_1_max, float boundary, float& best_cost_
         int count_bvh_tmp_2 = 0;
 
 
-        //check number of centroids in each partition
+
         auto is_in_BVH = [](float centroid, int& count_bvh_tmp_1, int& count_bvh_tmp_2, float boundary){ return centroid < boundary; };
 
+        std::vector<glm::vec3>::iterator partition_point;
+        std::size_t partition_index;
+        // auto it = std::partition(centroids.begin(), centroids.end(), [](int i) {return i % 2 == 0;});
         for(int j{bvh.primitive_index};  j<bvh.primitive_index+bvh.offset; j++){
             if (flag[0]){
-                std::vector<BVH>::iterator partition_point = std::partition(
+                partition_point = 
+                std::partition(
                     centroids.begin() + bvh.primitive_index, 
                     centroids.begin() + bvh.primitive_index + bvh.offset, 
-                    is_in_BVH(centroids[j].x, count_bvh_tmp_1, count_bvh_tmp_2, boundary)
+                    [&](const glm::vec3& c) {
+                        return is_in_BVH(c.x, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
+                    }
                 );
+                partition_index = static_cast<int>(std::distance(centroids.begin(), partition_point));
             }
+            
           
             else if (flag[1])
-                std::vector<BVH>::iterator partition_point = std::partition(
+            {
+                    auto partition_point = std::partition(
                     centroids.begin() + bvh.primitive_index, 
                     centroids.begin() + bvh.primitive_index + bvh.offset, 
-                    is_in_BVH(centroids[j].y, count_bvh_tmp_1, count_bvh_tmp_2, boundary)
-                );
+                    [&](const glm::vec3& c) {
+                        return is_in_BVH(c.y, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
+                    }
+                    );
+                    partition_index = static_cast<int>(std::distance(centroids.begin(), partition_point));
+            }
+
+
+
             else
-                std::vector<BVH>::iterator partition_point = std::partition(
+            {
+                auto partition_point = std::partition(
                     centroids.begin() + bvh.primitive_index, 
                     centroids.begin() + bvh.primitive_index + bvh.offset, 
-                    is_in_BVH(centroids[j].z, count_bvh_tmp_1, count_bvh_tmp_2, boundary)
+                    [&](const glm::vec3& c) {
+                        return is_in_BVH(c.z, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
+                    }
                 );
+                partition_index = static_cast<int>(std::distance(centroids.begin(), partition_point));
+
+
+            }
+                        
+            count_bvh_tmp_1 = static_cast<int>(partition_index - bvh.primitive_index);
+            count_bvh_tmp_2 = static_cast<int>(bvh.primitive_index+bvh.offset - partition_index);
+
                 
-            count_bvh_tmp_1 = static_cast<int>(partition_point - bvh.primitive_index);
-            count_bvh_tmp_2 = static_cast<int>(bvh.primitive_index+bvh.offset - partition_point);
+
 
         }
         bvh_tmp_1.count = count_bvh_tmp_1;
@@ -1354,10 +1396,12 @@ BVH* SplittingAndCost(glm::vec4 bvh_tmp_1_max, float boundary, float& best_cost_
 
 
         float cost_function = 0.125 + SAR_1*count_bvh_tmp_1 + SAR_2*count_bvh_tmp_2;
+        
         if(cost_function < best_cost_function){
             best_cost_function = cost_function;
+            bvh_pair = {bvh_tmp_1,bvh_tmp_2};
         }
-        return [bvh_tmp_1,bvh_tmp_2];
+        return bvh_pair;
 }
 
 
