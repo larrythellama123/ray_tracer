@@ -128,7 +128,7 @@ void create_BVH_nodes(const std::vector<BVHNode>& all_bvh_nodes, GLuint& BVHSSBO
 void create_list_size(const std::vector<int>& list_size, GLuint& LSSSBO, GLuint shaderProgram) ;
 
 
-std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max,glm::vec4 bvh_tmp_2_min, float boundary, float& best_cost_function, BVH& bvh, std::array<BVH, 2>  bvh_pair, float parent_area, bool* flag, std::vector<glm::vec3>& centroids);
+std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max,glm::vec4 bvh_tmp_2_min, float boundary, float& best_cost_function, BVH& bvh, std::array<BVH, 2>  bvh_pair, float parent_area, bool* flag, std::vector<std::pair<Triangle, glm::vec3>>& data);
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 
@@ -706,44 +706,38 @@ HitInfo RayAABB(Ray ray, inout BVHNode bvh_node_list[1000]){
     hit_info.dst = 1e10;
     hit_info.hit_point = vec3(0.0);
     hit_info.normal = vec3(0.0);
-    // BVHNode right_bvh_node;
-    // BVHNode bvh_node;
-    // bvh_node.left_child = -1;
-    // if(bvh_node.left_child != -1){
-    //     right_bvh_node = bvh_node_list[bvh_node.left_child+1];
+
+    // while (bvh_node.left_child != -1){
+
+    //     vec3 inverse_dir = 1.0 / ray.dir;
+    //     float tx1 = (bvh_node.bvh.min.x - ray.origin.x)*inverse_dir.x;
+    //     float tx2 = (bvh_node.bvh.max.x - ray.origin.x)*inverse_dir.x;
+
+    //     float tmin = min(tx1, tx2);
+    //     float tmax = max(tx1, tx2);
+
+    //     float ty1 = (bvh_node.bvh.min.y - ray.origin.y)*inverse_dir.y;
+    //     float ty2 = (bvh_node.bvh.max.y - ray.origin.y)*inverse_dir.y;
+
+    //     tmin = max(tmin, min(ty1, ty2));
+    //     tmax = min(tmax, max(ty1, ty2));
+
+    //     float tz1 = (bvh_node.bvh.min.z - ray.origin.z)*inverse_dir.z;
+    //     float tz2 = (bvh_node.bvh.max.z - ray.origin.z)*inverse_dir.z;
+
+    //     tmin = max(tmin, min(tz1, tz2));
+    //     tmax = min(tmax, max(tz1, tz2));
+
+    //     // if (tmax >= tmin){
+    //     //      bvh_node = bvh_node_list[bvh_node.left_child];
+    //     // }
+    //     // else{
+    //     //     bvh_node = bvh_node_list[bvh_node.left_child+1];
+    //     // }
     // }
-    while (bvh_node.left_child != -1){
-
-        vec3 inverse_dir = 1.0 / ray.dir;
-        float tx1 = (bvh_node.bvh.min.x - ray.origin.x)*inverse_dir.x;
-        float tx2 = (bvh_node.bvh.max.x - ray.origin.x)*inverse_dir.x;
-
-        float tmin = min(tx1, tx2);
-        float tmax = max(tx1, tx2);
-
-        float ty1 = (bvh_node.bvh.min.y - ray.origin.y)*inverse_dir.y;
-        float ty2 = (bvh_node.bvh.max.y - ray.origin.y)*inverse_dir.y;
-
-        tmin = max(tmin, min(ty1, ty2));
-        tmax = min(tmax, max(ty1, ty2));
-
-        float tz1 = (bvh_node.bvh.min.z - ray.origin.z)*inverse_dir.z;
-        float tz2 = (bvh_node.bvh.max.z - ray.origin.z)*inverse_dir.z;
-
-        tmin = max(tmin, min(tz1, tz2));
-        tmax = min(tmax, max(tz1, tz2));
-
-        // if (tmax >= tmin){
-        //     bvh_node = bvh_node_list[bvh_node.left_child];
-        //     right_bvh_node = bvh_node_list[bvh_node.left_child+1];
-        // }
-        // else{
-        //     bvh_node = right_bvh_node;
-        // }
-    }
-    for(int i=bvh_node.bvh.primitive_index; i < bvh_node.bvh.offset + 1; i++){
-        hit_info = RayTriangle(ray, triangles[i]);
-    }
+    // for(int i=bvh_node.bvh.primitive_index; i < bvh_node.bvh.offset + 1; i++){
+    //     hit_info = RayTriangle(ray, triangles[i]);
+    // }
     return hit_info;
 };
 
@@ -1047,8 +1041,8 @@ int main() {
     std::vector<Triangle> tri_arr;
     Triangle tri = {glm::vec4(1.0f,1.0f,1.0f,1.0f),glm::vec4(50.0f,70.0f,-7.0f,1.0f),glm::vec4(5.0f,100.0f,-7.0f,1.0f), material};
 
-    tri_arr.push_back(tri);
-    // tri_arr = triangle_arr;
+    // tri_arr.push_back(tri);
+    tri_arr = triangle_arr;
 
     int width = 1400;
     int height = 1400;
@@ -1269,12 +1263,16 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
     uint8_t num_buckets = 16;
     std::array<BVH,2> best_bvh_pair;   
     std::vector<glm::vec3> centroids;
+    std::vector<std::pair<Triangle, glm::vec3>> data;
 
     for(int i {0}; i<triangle_arr.size(); i++){
         glm::vec3 centroid = glm::vec3(triangle_arr[i].a)*0.33f +  glm::vec3(triangle_arr[i].b)*0.33f  +  glm::vec3(triangle_arr[i].c)*0.33f;
-        centroids.emplace_back(centroid);
+        std::pair<Triangle, glm::vec3> pair = {triangle_arr[i],centroid};
+        data.push_back(pair);
+        // centroids.emplace_back(centroid);
     }
-    
+
+
     
 
     glm::vec3 extent_bvh = bvh.max -bvh.min;
@@ -1283,9 +1281,9 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
     std::deque<BVH> BVH_list;
     std::vector<BVHNode> bvh_node_list;
 
-    bvh.offset = centroids.size()-1;
+    bvh.offset = triangle_arr.size()-1;
     bvh.primitive_index = 0;
-    bvh.count  = centroids.size();
+    bvh.count  = triangle_arr.size();
     bvh.padding = 0;
     BVH_list.push_back(bvh);
     while(!BVH_list.empty()){
@@ -1317,7 +1315,7 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
             flag[1] = false;
             flag[2] = false;
             if(step_Z > 0){
-                best_bvh_pair = SplittingAndCost(glm::vec4(bvh.max.x,bvh.max.y,boundary_Z,1.0f),glm::vec4(bvh.min.x,bvh.min.y,boundary_Z, 1.0f),boundary_Z, best_cost_function, bvh, best_bvh_pair, parent_area, flag, centroids);
+                best_bvh_pair = SplittingAndCost(glm::vec4(bvh.max.x,bvh.max.y,boundary_Z,1.0f),glm::vec4(bvh.min.x,bvh.min.y,boundary_Z, 1.0f),boundary_Z, best_cost_function, bvh, best_bvh_pair, parent_area, flag, data);
                 std::cout << best_bvh_pair[0].max.x <<"Z one"<<best_bvh_pair[0].max.y<<" "<<best_bvh_pair[0].max.z<<std::endl;
                 std::cout << best_bvh_pair[1].max.x <<"Z one"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
             }
@@ -1329,7 +1327,7 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
             flag[2] = false;
 
             if(step_X > 0){
-                            best_bvh_pair = SplittingAndCost(glm::vec4(boundary_X,bvh.max.y,bvh.max.z,1.0f),glm::vec4(boundary_X,bvh.min.y,bvh.min.z, 1.0f),boundary_X, best_cost_function, bvh, best_bvh_pair, parent_area, flag, centroids);
+                            best_bvh_pair = SplittingAndCost(glm::vec4(boundary_X,bvh.max.y,bvh.max.z,1.0f),glm::vec4(boundary_X,bvh.min.y,bvh.min.z, 1.0f),boundary_X, best_cost_function, bvh, best_bvh_pair, parent_area, flag, data);
             std::cout << best_bvh_pair[0].max.x <<"X one"<<best_bvh_pair[0].max.y<<" "<<best_bvh_pair[0].max.z<<std::endl;
             std::cout << best_bvh_pair[1].max.x <<"X one"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
             }
@@ -1340,7 +1338,7 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
             flag[2] = true;
 
             if(step_Y > 0){
-                            best_bvh_pair = SplittingAndCost(glm::vec4(bvh.max.x,boundary_Y,bvh.max.z,1.0f),glm::vec4(bvh.min.x,boundary_Y,bvh.min.z, 1.0f), boundary_Y, best_cost_function,  bvh, best_bvh_pair, parent_area, flag, centroids);
+                            best_bvh_pair = SplittingAndCost(glm::vec4(bvh.max.x,boundary_Y,bvh.max.z,1.0f),glm::vec4(bvh.min.x,boundary_Y,bvh.min.z, 1.0f), boundary_Y, best_cost_function,  bvh, best_bvh_pair, parent_area, flag, data);
                 std::cout << best_bvh_pair[0].max.x <<"y one"<<best_bvh_pair[0].max.y<<" "<<best_bvh_pair[0].max.z<<std::endl;
                 std::cout << best_bvh_pair[1].max.x <<"y one"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
             }
@@ -1356,15 +1354,18 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
         std::cout << best_bvh_pair[1].max.x <<"ererere"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
         std::cout << best_bvh_pair[1].min.x <<"ererere min"<<best_bvh_pair[1].min.y<<" "<<best_bvh_pair[1].min.z<<std::endl;
 
-
-
-
     }
+
+    std::vector<Triangle> tmp;
+    for(int i{0}; i<data.size(); i++){
+        tmp.push_back(data[i].first);
+    }
+    triangle_arr = tmp;
 
     return bvh_node_list;
 }
 
-std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_2_min, float boundary, float& best_cost_function, BVH& bvh, std::array<BVH, 2>  bvh_pair, float parent_area, bool* flag, std::vector<glm::vec3>& centroids){
+std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_2_min, float boundary, float& best_cost_function, BVH& bvh, std::array<BVH, 2>  bvh_pair, float parent_area, bool* flag, std::vector<std::pair<Triangle, glm::vec3>>& data){
 
         BVH bvh_tmp_1;
         bvh_tmp_1.max = bvh_tmp_1_max;
@@ -1391,16 +1392,17 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
         auto is_in_BVH = [](float centroid, int& count_bvh_tmp_1, int& count_bvh_tmp_2, float boundary){ 
             return centroid < boundary; };
 
+
         std::vector<glm::vec3>::iterator partition_point;
         std::size_t partition_index;
         if (flag[0]){
 
             partition_point = 
             std::partition(
-                centroids.begin() + bvh.primitive_index, 
-                centroids.begin() +  bvh.offset, 
+                data.begin() + bvh.primitive_index, 
+                data.begin() +  bvh.offset, 
                 [&](const glm::vec3& c) {
-                    return is_in_BVH(c.x, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
+                    return is_in_BVH(c.second.x, count_bvh_tmp_1 , count_bvh_tmp_2, boundary);
                 }
             );
             partition_index = static_cast<int>(std::distance(centroids.begin(), partition_point));
@@ -1411,10 +1413,10 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
         {
 
             partition_point = std::partition(
-            centroids.begin() + bvh.primitive_index, 
-            centroids.begin() + bvh.offset, 
+            data.begin() + bvh.primitive_index, 
+            data.begin() + bvh.offset, 
             [&](const glm::vec3& c) {
-                return is_in_BVH(c.y, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
+                return is_in_BVH(c.second.y, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
             }
             );
             partition_index = static_cast<int>(std::distance(centroids.begin(), partition_point));
@@ -1425,10 +1427,10 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
         else
         {
             partition_point = std::partition(
-                centroids.begin() + bvh.primitive_index, 
-                centroids.begin() + bvh.offset, 
+                data.begin() + bvh.primitive_index, 
+                data.begin() + bvh.offset, 
                 [&](const glm::vec3& c) {
-                    return is_in_BVH(c.z, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
+                    return is_in_BVH(c.second.z, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
                 }
             );
             partition_index = static_cast<int>(std::distance(centroids.begin(), partition_point));
