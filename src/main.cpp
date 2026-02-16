@@ -122,7 +122,7 @@ HitInfo RaySphere(Ray ray,  float sphereCenter, float sphereRadius){
 
 
 
-std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh);
+std::vector<BVHNode> SAH_BVH( std::vector<Triangle>& triangle_arr, BVH bvh);
 
 void create_BVH_nodes(const std::vector<BVHNode>& all_bvh_nodes, GLuint& BVHSSBO, GLuint shaderProgram) ;
 void create_list_size(const std::vector<int>& list_size, GLuint& LSSSBO, GLuint shaderProgram) ;
@@ -177,7 +177,7 @@ std::vector<Triangle> load_object(std::string file_path, RayTracingMaterial mate
 
             iss >> x >> y >> z;  
 
-            glm::vec4 vector = glm::vec4(x*10,y*10,(z*10)-screen_offset,1.0f);
+            glm::vec4 vector = glm::vec4(x*5,y*5,(z*5)-screen_offset,1.0f);
 
             vertice_data.push_back(vector);
 
@@ -613,295 +613,298 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
 
 
 
-HitInfo RaySphere(Ray ray,  vec3 sphereCenter, float sphereRadius, RayTracingMaterial material){
-    HitInfo hit_info;
-    hit_info.did_hit = false;
-    hit_info.dst = 1e10;
-    hit_info.hit_point = vec3(1.0,1.0,1.0);
-    hit_info.normal = vec3(1.0,1.0,1.0);
-
-    vec3 offset_ray_origin = ray.origin  - sphereCenter;
-    float a  = dot(ray.dir,ray.dir);
-    float b = 2 * dot(offset_ray_origin,ray.dir);
-    float c = dot(offset_ray_origin,offset_ray_origin) - sphereRadius*sphereRadius;
-    float discrim = b*b - 4*a*c;
-
-    if(discrim >= 0){
-        float dst = (-b - sqrt(discrim))/(2*a);
-        if (dst >= 0.0) {
-            hit_info.did_hit = true;
-            hit_info.dst = dst;
-            hit_info.hit_point = ray.origin + dst * ray.dir;
-            hit_info.normal = normalize(hit_info.hit_point - sphereCenter);
-            hit_info.material = material;
-        }
-    }
-
-    return hit_info;
-};
-
-HitInfo RayTriangle(const Ray ray, const Triangle tri)
-    {
-        vec3 orig  = ray.origin;
-        vec3 dir = ray.dir;
-
-        vec3 v0 = vec3(tri.a);
-        vec3 v1 = vec3(tri.b);
-        vec3 v2 = vec3(tri.c);
-
+    HitInfo RaySphere(Ray ray,  vec3 sphereCenter, float sphereRadius, RayTracingMaterial material){
         HitInfo hit_info;
         hit_info.did_hit = false;
         hit_info.dst = 1e10;
         hit_info.hit_point = vec3(1.0,1.0,1.0);
         hit_info.normal = vec3(1.0,1.0,1.0);
 
-        hit_info.did_hit = false;
-        vec3 v0v1 = v1 - v0;
-        vec3 v0v2 = v2 - v0;
-        vec3 pvec = cross(dir,v0v2);
-        float det = dot(pvec,v0v1);
+        vec3 offset_ray_origin = ray.origin  - sphereCenter;
+        float a  = dot(ray.dir,ray.dir);
+        float b = 2 * dot(offset_ray_origin,ray.dir);
+        float c = dot(offset_ray_origin,offset_ray_origin) - sphereRadius*sphereRadius;
+        float discrim = b*b - 4*a*c;
 
-        // If the determinant is negative, the triangle is back-facing.
-        // If the determinant is close to 0, the ray misses the triangle.
-        // If det is close to 0, the ray and triangle are parallel.
-
-        const float kEpsilon = 0.0000001;
-        // if (det < kEpsilon || fabs(det) < kEpsilon){
-        //     return hit_info;
-        // }
-        if (abs(det) < kEpsilon) {
-            return hit_info;
+        if(discrim >= 0){
+            float dst = (-b - sqrt(discrim))/(2*a);
+            if (dst >= 0.0) {
+                hit_info.did_hit = true;
+                hit_info.dst = dst;
+                hit_info.hit_point = ray.origin + dst * ray.dir;
+                hit_info.normal = normalize(hit_info.hit_point - sphereCenter);
+                hit_info.material = material;
+            }
         }
-       
-        float invDet = 1 / det;
-
-        vec3 tvec = orig - v0;
-        float u = dot(tvec,pvec) * invDet;
-        if (u < 0 || u > 1) return hit_info;
-
-        vec3 qvec = cross(tvec, v0v1);
-        float v = dot(dir,qvec) * invDet;
-        if (v < 0 || u + v > 1) return hit_info;
-        
-        float t = dot(v0v2,qvec) * invDet;
-
-        // return if dst t is less than small value as this means a ray dir is being multiplied by a negative, 
-        //so it is moving in the incorrect dir to the ray dir
-        if (t < kEpsilon) return hit_info;
-
-        
-        hit_info.did_hit = true;
-        hit_info.hit_point = orig + t*dir;
-        hit_info.dst = t;
-        hit_info.normal = normalize(cross(v0v2,v0v1));
-        hit_info.material = tri.material;
 
         return hit_info;
-};
+    };
 
-HitInfo RayAABB(Ray ray, inout BVHNode bvh_node_list[1000]){
-    BVHNode bvh_node = bvh_node_list[0];
-    HitInfo hit_info;
-    hit_info.did_hit = false; 
-    hit_info.dst = 1e10;
-    hit_info.hit_point = vec3(0.0);
-    hit_info.normal = vec3(0.0);
+    HitInfo RayTriangle(const Ray ray, const Triangle tri)
+        {
+            vec3 orig  = ray.origin;
+            vec3 dir = ray.dir;
 
-    // while (bvh_node.left_child != -1){
+            vec3 v0 = vec3(tri.a);
+            vec3 v1 = vec3(tri.b);
+            vec3 v2 = vec3(tri.c);
 
-    //     vec3 inverse_dir = 1.0 / ray.dir;
-    //     float tx1 = (bvh_node.bvh.min.x - ray.origin.x)*inverse_dir.x;
-    //     float tx2 = (bvh_node.bvh.max.x - ray.origin.x)*inverse_dir.x;
+            HitInfo hit_info;
+            hit_info.did_hit = false;
+            hit_info.dst = 1e10;
+            hit_info.hit_point = vec3(1.0,1.0,1.0);
+            hit_info.normal = vec3(1.0,1.0,1.0);
 
-    //     float tmin = min(tx1, tx2);
-    //     float tmax = max(tx1, tx2);
+            hit_info.did_hit = false;
+            vec3 v0v1 = v1 - v0;
+            vec3 v0v2 = v2 - v0;
+            vec3 pvec = cross(dir,v0v2);
+            float det = dot(pvec,v0v1);
 
-    //     float ty1 = (bvh_node.bvh.min.y - ray.origin.y)*inverse_dir.y;
-    //     float ty2 = (bvh_node.bvh.max.y - ray.origin.y)*inverse_dir.y;
+            // If the determinant is negative, the triangle is back-facing.
+            // If the determinant is close to 0, the ray misses the triangle.
+            // If det is close to 0, the ray and triangle are parallel.
 
-    //     tmin = max(tmin, min(ty1, ty2));
-    //     tmax = min(tmax, max(ty1, ty2));
+            const float kEpsilon = 0.0000001;
+            // if (det < kEpsilon || fabs(det) < kEpsilon){
+            //     return hit_info;
+            // }
+            if (abs(det) < kEpsilon) {
+                return hit_info;
+            }
+        
+            float invDet = 1 / det;
 
-    //     float tz1 = (bvh_node.bvh.min.z - ray.origin.z)*inverse_dir.z;
-    //     float tz2 = (bvh_node.bvh.max.z - ray.origin.z)*inverse_dir.z;
+            vec3 tvec = orig - v0;
+            float u = dot(tvec,pvec) * invDet;
+            if (u < 0 || u > 1) return hit_info;
 
-    //     tmin = max(tmin, min(tz1, tz2));
-    //     tmax = min(tmax, max(tz1, tz2));
+            vec3 qvec = cross(tvec, v0v1);
+            float v = dot(dir,qvec) * invDet;
+            if (v < 0 || u + v > 1) return hit_info;
+            
+            float t = dot(v0v2,qvec) * invDet;
 
-    //     // if (tmax >= tmin){
-    //     //      bvh_node = bvh_node_list[bvh_node.left_child];
-    //     // }
-    //     // else{
-    //     //     bvh_node = bvh_node_list[bvh_node.left_child+1];
-    //     // }
-    // }
-    // for(int i=bvh_node.bvh.primitive_index; i < bvh_node.bvh.offset + 1; i++){
-    //     hit_info = RayTriangle(ray, triangles[i]);
-    // }
-    return hit_info;
-};
+            // return if dst t is less than small value as this means a ray dir is being multiplied by a negative, 
+            //so it is moving in the incorrect dir to the ray dir
+            if (t < kEpsilon) return hit_info;
 
+            
+            hit_info.did_hit = true;
+            hit_info.hit_point = orig + t*dir;
+            hit_info.dst = t;
+            hit_info.normal = normalize(cross(v0v2,v0v1));
+            hit_info.material = tri.material;
 
+            return hit_info;
+    };
 
-vec4 GetEnvironmentLight(Ray ray){
-    vec4 emitted_light = vec4(0.0, 0.0, 0.0, 0.0);
-    for(int i=0; i < spheres.length(); ++i){
-        if(spheres[i].material.flag != LIGHT_SOURCE){
-            continue;
+    HitInfo RayAABB(Ray ray, inout BVHNode bvh_node_list[1000]){
+        BVHNode bvh_node = bvh_node_list[0];
+        HitInfo hit_info;
+        hit_info.did_hit = false; 
+        hit_info.dst = 1e10;
+        hit_info.hit_point = vec3(0.0);
+        hit_info.normal = vec3(0.0);
+
+        // while (bvh_node.left_child != -1){
+
+        //     vec3 inverse_dir = 1.0 / ray.dir;
+        //     float tx1 = (bvh_node.bvh.min.x - ray.origin.x)*inverse_dir.x;
+        //     float tx2 = (bvh_node.bvh.max.x - ray.origin.x)*inverse_dir.x;
+
+        //     float tmin = min(tx1, tx2);
+        //     float tmax = max(tx1, tx2);
+
+        //     float ty1 = (bvh_node.bvh.min.y - ray.origin.y)*inverse_dir.y;
+        //     float ty2 = (bvh_node.bvh.max.y - ray.origin.y)*inverse_dir.y;
+
+        //     tmin = max(tmin, min(ty1, ty2));
+        //     tmax = min(tmax, max(ty1, ty2));
+
+        //     float tz1 = (bvh_node.bvh.min.z - ray.origin.z)*inverse_dir.z;
+        //     float tz2 = (bvh_node.bvh.max.z - ray.origin.z)*inverse_dir.z;
+
+        //     tmin = max(tmin, min(tz1, tz2));
+        //     tmax = min(tmax, max(tz1, tz2));
+
+        //     if (tmax >= tmin){
+        //         bvh_node = bvh_node_list[bvh_node.left_child];
+        //     }
+        //     else{
+        //         bvh_node = bvh_node_list[bvh_node.left_child+1];
+        //     }
+        // }
+        // for(int i=bvh_node.bvh.primitive_index; i < bvh_node.bvh.offset; i++){
+        //     hit_info = RayTriangle(ray, triangles[i]);
+        // }
+        for(int i=bvh_node.bvh.primitive_index; i < bvh_node.bvh.primitive_index+1; i++){
+            hit_info = RayTriangle(ray, triangles[i]);
         }
-        HitInfo hit_info = RaySphere(ray, vec3(spheres[i].position), spheres[i].radius,spheres[i].material);
-        if(hit_info.did_hit){
-            emitted_light =  spheres[i].material.emissionColour * spheres[i].material.emissionStrength;
-        }        
+        return hit_info;
+    };
+
+
+
+    vec4 GetEnvironmentLight(Ray ray){
+        vec4 emitted_light = vec4(0.0, 0.0, 0.0, 0.0);
+        for(int i=0; i < spheres.length(); ++i){
+            if(spheres[i].material.flag != LIGHT_SOURCE){
+                continue;
+            }
+            HitInfo hit_info = RaySphere(ray, vec3(spheres[i].position), spheres[i].radius,spheres[i].material);
+            if(hit_info.did_hit){
+                emitted_light =  spheres[i].material.emissionColour * spheres[i].material.emissionStrength;
+            }        
+        }
+        return emitted_light;
     }
-    return emitted_light;
-}
 
 
-HitInfo CalculateRayCollision(Ray ray){
-    vec3 u_SphereCenter;
-    float u_SphereRadius;
-    RayTracingMaterial u_SphereMaterial;
+    HitInfo CalculateRayCollision(Ray ray){
+        vec3 u_SphereCenter;
+        float u_SphereRadius;
+        RayTracingMaterial u_SphereMaterial;
 
-    HitInfo closest_hit_info;
-    float distance = 1e10;
-    vec4 colour = vec4(0.2, 0.3, 0.3, 1.0);
-    HitInfo hit_info;
+        HitInfo closest_hit_info;
+        float distance = 1e10;
+        vec4 colour = vec4(0.2, 0.3, 0.3, 1.0);
+        HitInfo hit_info;
 
-    for(int i=0; i < spheres.length(); ++i){
-        u_SphereCenter = vec3(spheres[i].position);
-        u_SphereRadius = spheres[i].radius;
-        u_SphereMaterial = spheres[i].material;
+        for(int i=0; i < spheres.length(); ++i){
+            u_SphereCenter = vec3(spheres[i].position);
+            u_SphereRadius = spheres[i].radius;
+            u_SphereMaterial = spheres[i].material;
 
-        hit_info = RaySphere(ray,  u_SphereCenter, u_SphereRadius,  u_SphereMaterial);
-        if(hit_info.did_hit && hit_info.dst<distance){
-            distance = hit_info.dst;
-            closest_hit_info = hit_info;
-        }        
-    }
-    //split up into BVH object groups
-    int size = 0;
-    int list_size_idx =0;
-    int bvh_node_idx = 0;
-    int i =0;
-    BVHNode bvh_node_list[1000];
-    while(i < all_BVHs.length()){
-        bvh_node_list[bvh_node_idx] = all_BVHs[i];
-        i++;
-        size++;
-        bvh_node_idx++;
-        if(size == list_sizes[list_size_idx]){
-            size = 0;
-            bvh_node_idx = 0;
-            list_size_idx++;
-            hit_info = RayAABB(ray,  bvh_node_list);    
+            hit_info = RaySphere(ray,  u_SphereCenter, u_SphereRadius,  u_SphereMaterial);
             if(hit_info.did_hit && hit_info.dst<distance){
                 distance = hit_info.dst;
                 closest_hit_info = hit_info;
+            }        
+        }
+        //split up into BVH object groups
+        int size = 0;
+        int list_size_idx =0;
+        int bvh_node_idx = 0;
+        int i =0;
+        BVHNode bvh_node_list[1000];
+        while(i < all_BVHs.length()){
+            bvh_node_list[bvh_node_idx] = all_BVHs[i];
+            i++;
+            size++;
+            bvh_node_idx++;
+            if(size == list_sizes[list_size_idx]){
+                size = 0;
+                bvh_node_idx = 0;
+                list_size_idx++;
+                hit_info = RayAABB(ray,  bvh_node_list);    
+                if(hit_info.did_hit && hit_info.dst<distance){
+                    distance = hit_info.dst;
+                    closest_hit_info = hit_info;
+                }
             }
         }
-    }
-   
-    return closest_hit_info;
-}
-
-
-vec4 Trace(inout uint state){
-    vec2 uv = TexCoord * 2.0 - 1.0;
-    vec4 incoming_light = vec4(0.0f,0.0f,0.0f,0.0f);
-    vec4 ray_color = vec4(1.0f,1.0f,1.0f,1.0f);
-
-    vec4 target = inverse(projection) * vec4(uv.x, uv.y, 1.0, 1.0);
-    vec3 rayDir = vec3(inverse(view) * vec4(normalize(vec3(target) / target.w), 0.0));
     
-    Ray ray;
-    ray.origin = u_RayOrigin;
-    ray.dir = normalize(rayDir);
+        return closest_hit_info;
+    }
 
-    int count = 0;
-    while(count< maxBounceCount){
-        HitInfo hit_info = CalculateRayCollision(ray);
-        if(hit_info.did_hit){
-            RayTracingMaterial material  = hit_info.material;
-            if(count == 1 && material.flag == LIGHT_SOURCE){
-                incoming_light = vec4(1.0f,1.0f,1.0f,1.0f) * ray_color;
+
+    vec4 Trace(inout uint state){
+        vec2 uv = TexCoord * 2.0 - 1.0;
+        vec4 incoming_light = vec4(0.0f,0.0f,0.0f,0.0f);
+        vec4 ray_color = vec4(1.0f,1.0f,1.0f,1.0f);
+
+        vec4 target = inverse(projection) * vec4(uv.x, uv.y, 1.0, 1.0);
+        vec3 rayDir = vec3(inverse(view) * vec4(normalize(vec3(target) / target.w), 0.0));
+        
+        Ray ray;
+        ray.origin = u_RayOrigin;
+        ray.dir = normalize(rayDir);
+
+        int count = 0;
+        while(count< maxBounceCount){
+            HitInfo hit_info = CalculateRayCollision(ray);
+            if(hit_info.did_hit){
+                RayTracingMaterial material  = hit_info.material;
+                if(count == 1 && material.flag == LIGHT_SOURCE){
+                    incoming_light = vec4(1.0f,1.0f,1.0f,1.0f) * ray_color;
+                    break;
+                }
+                ray.origin = hit_info.hit_point;
+                ray.dir = RandomDirectionHemisphere(hit_info.normal,state);
+                vec4 emitted_light = material.emissionColour * material.emissionStrength;
+                incoming_light += emitted_light * ray_color; 
+                ray_color *= material.colour;  
+            }
+            else{
+                incoming_light = vec4(0.2f,0.1f,0.3f,1.0f) * ray_color;
                 break;
             }
-            ray.origin = hit_info.hit_point;
-            ray.dir = RandomDirectionHemisphere(hit_info.normal,state);
-            vec4 emitted_light = material.emissionColour * material.emissionStrength;
-            incoming_light += emitted_light * ray_color; 
-            ray_color *= material.colour;  
+
+            count+=1;
         }
-        else{
-            incoming_light = vec4(0.2f,0.1f,0.3f,1.0f) * ray_color;
-            break;
+        return incoming_light;
+    }
+
+    layout(rgba32f, binding = 0) uniform readonly image2D prevFrame;
+    layout(rgba32f, binding = 1) uniform writeonly image2D currentFrame;
+
+    void main()
+    {
+        uint rays_per_pixel = 10;
+        vec2 pixelCoord = TexCoord * u_Resolution;
+        int pixelIndex = int(pixelCoord.y + pixelCoord.x * u_Resolution.x);
+        ivec2 pixelCoords = ivec2(pixelCoord); 
+        
+        vec4 totalColor = vec4(0.0);
+        for(uint i = 0; i < rays_per_pixel; i++){
+            uint state = uint(pixelIndex) + (Frame * rays_per_pixel + i) * 719393u;
+            totalColor += Trace(state);
         }
-
-        count+=1;
-    }
-    return incoming_light;
-}
-
-layout(rgba32f, binding = 0) uniform readonly image2D prevFrame;
-layout(rgba32f, binding = 1) uniform writeonly image2D currentFrame;
-
-void main()
-{
-    uint rays_per_pixel = 10;
-    vec2 pixelCoord = TexCoord * u_Resolution;
-    int pixelIndex = int(pixelCoord.y + pixelCoord.x * u_Resolution.x);
-    ivec2 pixelCoords = ivec2(pixelCoord); 
-    
-    vec4 totalColor = vec4(0.0);
-    for(uint i = 0; i < rays_per_pixel; i++){
-        uint state = uint(pixelIndex) + (Frame * rays_per_pixel + i) * 719393u;
-        totalColor += Trace(state);
-    }
-    vec4 currentRayColor = totalColor / float(rays_per_pixel);
-    
-    if(Frame == 0){
-        imageStore(currentFrame, pixelCoords, currentRayColor);  
-    } else {
-        vec4 accumulatedColor = imageLoad(prevFrame, pixelCoords);  
+        vec4 currentRayColor = totalColor / float(rays_per_pixel);
         
-        vec4 finalColor = (accumulatedColor * float(Frame) + currentRayColor) / float(Frame + 1);
-        
-        imageStore(currentFrame, pixelCoords, finalColor); 
+        if(Frame == 0){
+            imageStore(currentFrame, pixelCoords, currentRayColor);  
+        } else {
+            vec4 accumulatedColor = imageLoad(prevFrame, pixelCoords);  
+            
+            vec4 finalColor = (accumulatedColor * float(Frame) + currentRayColor) / float(Frame + 1);
+            
+            imageStore(currentFrame, pixelCoords, finalColor); 
+        }
     }
-}
 
 
-)";
+    )";
 
 
 
 
-const char* displayVertexShader = R"(
-#version 430 core
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec2 aTexCoord;
-out vec2 TexCoord;
+    const char* displayVertexShader = R"(
+    #version 430 core
+    layout (location = 0) in vec3 aPos;
+    layout (location = 1) in vec2 aTexCoord;
+    out vec2 TexCoord;
 
-void main()
-{
-    gl_Position = vec4(aPos, 1.0);
-    TexCoord = aTexCoord;
-}
-)";
+    void main()
+    {
+        gl_Position = vec4(aPos, 1.0);
+        TexCoord = aTexCoord;
+    }
+    )";
 
-// Add this simple fragment shader for display
-const char* displayFragmentShader = R"(
-#version 430 core
-in vec2 TexCoord;
-out vec4 FragColor;
-uniform sampler2D displayTexture;
+    // Add this simple fragment shader for display
+    const char* displayFragmentShader = R"(
+    #version 430 core
+    in vec2 TexCoord;
+    out vec4 FragColor;
+    uniform sampler2D displayTexture;
 
-void main()
-{
-    FragColor = texture(displayTexture, TexCoord);
-}
-)";
+    void main()
+    {
+        FragColor = texture(displayTexture, TexCoord);
+    }
+    )";
 
 // Create display shader program (add this in main after creating main shader)
 
@@ -1054,12 +1057,19 @@ int main() {
     std::cout<<"behe"<<std::endl;
     
     std::vector<BVHNode> bvh_node_list = SAH_BVH(tri_arr,bvh);
+
+    std::cout<<"behe"<<std::endl;
+    std::cout<<bvh_node_list[0].bvh.count<<std::endl;
+
+    // for(int i{0}; i<tri_arr.size(); i++){
+    //     std::cout<<tri_arr[i].a.x
+    // }
     std::vector<BVHNode> all_bvh_nodes;
     std::vector<int> list_size;
 
 
     for(int i{0}; i<bvh_node_list.size(); i++){
-        std::cout<<"erer"<<bvh_node_list[i].bvh.padding;
+        std::cout<<"erer"<<bvh_node_list[i].bvh.count << " "<< bvh_node_list[i].bvh.primitive_index<<" "<< bvh_node_list[i].bvh.offset<<std::endl;
         all_bvh_nodes.push_back(bvh_node_list[i]);
     }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -1259,9 +1269,8 @@ void create_list_size(const std::vector<int>& list_size, GLuint& LSSSBO, GLuint 
 
 
 
-std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh){
+std::vector<BVHNode> SAH_BVH(std::vector<Triangle>& triangle_arr, BVH bvh){
     uint8_t num_buckets = 16;
-    std::array<BVH,2> best_bvh_pair;   
     std::vector<glm::vec3> centroids;
     std::vector<std::pair<Triangle, glm::vec3>> data;
 
@@ -1281,26 +1290,29 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
     std::deque<BVH> BVH_list;
     std::vector<BVHNode> bvh_node_list;
 
-    bvh.offset = triangle_arr.size()-1;
+    int parent_node_num = 0;
+    bvh.offset = triangle_arr.size();
     bvh.primitive_index = 0;
     bvh.count  = triangle_arr.size();
     bvh.padding = 0;
     BVH_list.push_back(bvh);
+
     while(!BVH_list.empty()){
         bvh = BVH_list[0];
         BVH_list.pop_front();
-        std::cout << bvh.max.x <<"HELLO"<< bvh.max.y<<" "<< bvh.max.z<<std::endl;
-        std::cout << bvh.min.x <<"HELLO"<< bvh.min.y<<" "<< bvh.min.z<<std::endl;
+        // std::cout << bvh.max.x <<"HELLO"<< bvh.max.y<<" "<< bvh.max.z<<std::endl;
+        // std::cout << bvh.min.x <<"HELLO"<< bvh.min.y<<" "<< bvh.min.z<<std::endl;
 
-        std::cout << bvh.count <<" OG COUNT"<<std::endl;
+        std::cout << bvh.count <<" OG COUNT"<<bvh.offset<<" "<<bvh.primitive_index<<std::endl;
 
-        if(bvh.count < 5){
+        if(bvh.count < 20){
             std::cout << bvh.max.x <<"BVH COUNT is LOW"<< bvh.max.y<<" "<< bvh.max.z<<std::endl;
             BVHNode leaf_node = {bvh, -1, LEAF_NODE,0,0};
             bvh_node_list.push_back(leaf_node);
             continue;
         }
         float best_cost_function = 1e10;
+        std::array<BVH,2> best_bvh_pair;   
         float step_Z = (bvh.max.z -bvh.min.z)/(num_buckets);
         float step_X = (bvh.max.x -bvh.min.x)/(num_buckets); 
         float step_Y = (bvh.max.y -bvh.min.y)/(num_buckets); 
@@ -1316,8 +1328,8 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
             flag[2] = false;
             if(step_Z > 0){
                 best_bvh_pair = SplittingAndCost(glm::vec4(bvh.max.x,bvh.max.y,boundary_Z,1.0f),glm::vec4(bvh.min.x,bvh.min.y,boundary_Z, 1.0f),boundary_Z, best_cost_function, bvh, best_bvh_pair, parent_area, flag, data);
-                std::cout << best_bvh_pair[0].max.x <<"Z one"<<best_bvh_pair[0].max.y<<" "<<best_bvh_pair[0].max.z<<std::endl;
-                std::cout << best_bvh_pair[1].max.x <<"Z one"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
+                // std::cout << best_bvh_pair[0].max.x <<"Z one"<<best_bvh_pair[0].max.y<<" "<<best_bvh_pair[0].max.z<<std::endl;
+                // std::cout << best_bvh_pair[1].max.x <<"Z one"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
             }
 
         
@@ -1327,9 +1339,9 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
             flag[2] = false;
 
             if(step_X > 0){
-                            best_bvh_pair = SplittingAndCost(glm::vec4(boundary_X,bvh.max.y,bvh.max.z,1.0f),glm::vec4(boundary_X,bvh.min.y,bvh.min.z, 1.0f),boundary_X, best_cost_function, bvh, best_bvh_pair, parent_area, flag, data);
-            std::cout << best_bvh_pair[0].max.x <<"X one"<<best_bvh_pair[0].max.y<<" "<<best_bvh_pair[0].max.z<<std::endl;
-            std::cout << best_bvh_pair[1].max.x <<"X one"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
+                best_bvh_pair = SplittingAndCost(glm::vec4(boundary_X,bvh.max.y,bvh.max.z,1.0f),glm::vec4(boundary_X,bvh.min.y,bvh.min.z, 1.0f),boundary_X, best_cost_function, bvh, best_bvh_pair, parent_area, flag, data);
+                // std::cout << best_bvh_pair[0].max.x <<"X one"<<best_bvh_pair[0].max.y<<" "<<best_bvh_pair[0].max.z<<std::endl;
+                // std::cout << best_bvh_pair[1].max.x <<"X one"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
             }
 
 
@@ -1338,21 +1350,25 @@ std::vector<BVHNode> SAH_BVH(const std::vector<Triangle>& triangle_arr, BVH bvh)
             flag[2] = true;
 
             if(step_Y > 0){
-                            best_bvh_pair = SplittingAndCost(glm::vec4(bvh.max.x,boundary_Y,bvh.max.z,1.0f),glm::vec4(bvh.min.x,boundary_Y,bvh.min.z, 1.0f), boundary_Y, best_cost_function,  bvh, best_bvh_pair, parent_area, flag, data);
-                std::cout << best_bvh_pair[0].max.x <<"y one"<<best_bvh_pair[0].max.y<<" "<<best_bvh_pair[0].max.z<<std::endl;
-                std::cout << best_bvh_pair[1].max.x <<"y one"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
+                best_bvh_pair = SplittingAndCost(glm::vec4(bvh.max.x,boundary_Y,bvh.max.z,1.0f),glm::vec4(bvh.min.x,boundary_Y,bvh.min.z, 1.0f), boundary_Y, best_cost_function,  bvh, best_bvh_pair, parent_area, flag, data);
+                // std::cout << best_bvh_pair[0].max.x <<"y one"<<best_bvh_pair[0].max.y<<" "<<best_bvh_pair[0].max.z<<std::endl;
+                // std::cout << best_bvh_pair[1].max.x <<"y one"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
             }
 
         }
-        int left_child = bvh_node_list.size();
-        BVHNode parent_node = {bvh, left_child, NODE,0,0};
-        bvh_node_list.push_back(parent_node);
         BVH_list.push_back(best_bvh_pair[0]);
         // std::cout << best_bvh_pair[0].max.x <<"ererere"<<best_bvh_pair[0].max.y<<" "<<best_bvh_pair[0].max.z<<std::endl;
-
         BVH_list.push_back(best_bvh_pair[1]);
-        std::cout << best_bvh_pair[1].max.x <<"ererere"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
-        std::cout << best_bvh_pair[1].min.x <<"ererere min"<<best_bvh_pair[1].min.y<<" "<<best_bvh_pair[1].min.z<<std::endl;
+        int left_child = bvh_node_list.size() + BVH_list.size() - 1;
+        BVHNode parent_node = {bvh, left_child, NODE,0,0};
+        bvh_node_list.push_back(parent_node);
+
+        std::cout << best_bvh_pair[1].offset<<" "<<best_bvh_pair[1].primitive_index<<" ererere "<<  best_bvh_pair[1].count<<std::endl;
+        std::cout << best_bvh_pair[0].offset<<" "<<best_bvh_pair[0].primitive_index<< "ererere "<< best_bvh_pair[0].count<<std::endl;
+
+
+        // std::cout << best_bvh_pair[1].max.x <<"ererere"<<best_bvh_pair[1].max.y<<" "<<best_bvh_pair[1].max.z<<std::endl;
+        // std::cout << best_bvh_pair[1].min.x <<"ererere min"<<best_bvh_pair[1].min.y<<" "<<best_bvh_pair[1].min.z<<std::endl;
 
     }
 
@@ -1393,7 +1409,7 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
             return centroid < boundary; };
 
 
-        std::vector<glm::vec3>::iterator partition_point;
+        std::vector<std::pair<Triangle, glm::vec3>>::iterator partition_point;
         std::size_t partition_index;
         if (flag[0]){
 
@@ -1401,11 +1417,11 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
             std::partition(
                 data.begin() + bvh.primitive_index, 
                 data.begin() +  bvh.offset, 
-                [&](const glm::vec3& c) {
+                [&](const std::pair<Triangle, glm::vec3>& c) {
                     return is_in_BVH(c.second.x, count_bvh_tmp_1 , count_bvh_tmp_2, boundary);
                 }
             );
-            partition_index = static_cast<int>(std::distance(centroids.begin(), partition_point));
+            partition_index = static_cast<int>(std::distance(data.begin(), partition_point));
         }
         
         
@@ -1415,11 +1431,11 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
             partition_point = std::partition(
             data.begin() + bvh.primitive_index, 
             data.begin() + bvh.offset, 
-            [&](const glm::vec3& c) {
+            [&](const std::pair<Triangle, glm::vec3>& c) {
                 return is_in_BVH(c.second.y, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
             }
             );
-            partition_index = static_cast<int>(std::distance(centroids.begin(), partition_point));
+            partition_index = static_cast<int>(std::distance(data.begin(), partition_point));
         }
 
 
@@ -1429,11 +1445,11 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
             partition_point = std::partition(
                 data.begin() + bvh.primitive_index, 
                 data.begin() + bvh.offset, 
-                [&](const glm::vec3& c) {
+                [&](const std::pair<Triangle, glm::vec3>& c) {
                     return is_in_BVH(c.second.z, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
                 }
             );
-            partition_index = static_cast<int>(std::distance(centroids.begin(), partition_point));
+            partition_index = static_cast<int>(std::distance(data.begin(), partition_point));
 
 
         }
@@ -1443,7 +1459,7 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
 
         bvh_tmp_1.count = count_bvh_tmp_1;
         bvh_tmp_1.primitive_index = bvh.primitive_index;
-        bvh_tmp_1.offset = partition_index-1;
+        bvh_tmp_1.offset = partition_index;
 
         bvh_tmp_2.count = count_bvh_tmp_2;
         bvh_tmp_2.primitive_index = partition_index;
@@ -1454,15 +1470,17 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
         float cost_function = 0.125 + SAR_1*count_bvh_tmp_1 + SAR_2*count_bvh_tmp_2;
         
         if(cost_function < best_cost_function){
-            best_cost_function = cost_function;
-            bvh_pair = {bvh_tmp_1,bvh_tmp_2};
+            if(count_bvh_tmp_1>0 && count_bvh_tmp_2>0){
+                best_cost_function = cost_function;
+                bvh_pair = {bvh_tmp_1,bvh_tmp_2}; 
+            }
             std::cout<<bvh_tmp_1.count<<" THE COUNT 1 "<<std::endl;
             std::cout<<bvh_tmp_2.count<<" THE COUNT 2"<<std::endl;
-            std::cout << bvh_pair[0].max.x <<" ererere 1 max "<<bvh_pair[0].max.y<<" "<<bvh_pair[0].max.z<<std::endl;
-            std::cout << bvh_pair[0].min.x <<" ererere 1 min "<<bvh_pair[0].min.y<<" "<<bvh_pair[0].min.z<<std::endl;
+            // std::cout << bvh_pair[0].max.x <<" ererere 1 max "<<bvh_pair[0].max.y<<" "<<bvh_pair[0].max.z<<std::endl;
+            // std::cout << bvh_pair[0].min.x <<" ererere 1 min "<<bvh_pair[0].min.y<<" "<<bvh_pair[0].min.z<<std::endl;
 
-            std::cout << bvh_pair[1].max.x <<" ererere 2 max "<< bvh_pair[1].max.y<<" "<< bvh_pair[1].max.z<<std::endl;
-            std::cout << bvh_pair[1].min.x <<" ererere 2 min "<< bvh_pair[1].min.y<<" "<< bvh_pair[1].min.z<<std::endl;
+            // std::cout << bvh_pair[1].max.x <<" ererere 2 max "<< bvh_pair[1].max.y<<" "<< bvh_pair[1].max.z<<std::endl;
+            // std::cout << bvh_pair[1].min.x <<" ererere 2 min "<< bvh_pair[1].min.y<<" "<< bvh_pair[1].min.z<<std::endl;
 
             
         }
