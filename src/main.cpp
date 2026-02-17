@@ -19,6 +19,8 @@
 #include <deque>
 #include <algorithm>
 #include <array>
+#include <stack>
+#include <tuple>
 #define LIGHT_SOURCE 2
 #define LEAF_NODE 3
 #define NODE 4
@@ -85,6 +87,14 @@ struct  alignas(16) BVHNode{
     int padding2=0;
 };
 
+struct  alignas(16) BVHNodeSmall{
+    int idx;
+    int left_child=0;
+    int flag = NODE;
+    int padding=0;
+};
+
+
 void GrowBVHVertice(BVH& bvh, glm::vec4 vertice){
     bvh.min = min(bvh.min, vertice);
     bvh.max = max(bvh.max, vertice);
@@ -124,8 +134,8 @@ HitInfo RaySphere(Ray ray,  float sphereCenter, float sphereRadius){
 
 std::vector<BVHNode> SAH_BVH( std::vector<Triangle>& triangle_arr, BVH bvh);
 
-void create_BVH_nodes(const std::vector<BVHNode>& all_bvh_nodes, GLuint& BVHSSBO, GLuint shaderProgram) ;
-void create_list_size(const std::vector<int>& list_size, GLuint& LSSSBO, GLuint shaderProgram) ;
+void create_BVH_nodes(const std::vector<BVHNodeSmall>& all_bvh_nodes, GLuint& BVHSSBO, GLuint shaderProgram) ;
+void create_BVH_list(const std::vector<BVH>& list_size, GLuint& LSSSBO, GLuint shaderProgram) ;
 
 
 std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max,glm::vec4 bvh_tmp_2_min, float boundary, float& best_cost_function, BVH& bvh, std::array<BVH, 2>  bvh_pair, float parent_area, bool* flag, std::vector<std::pair<Triangle, glm::vec3>>& data);
@@ -177,7 +187,7 @@ std::vector<Triangle> load_object(std::string file_path, RayTracingMaterial mate
 
             iss >> x >> y >> z;  
 
-            glm::vec4 vector = glm::vec4(x*6,y*6,(z*6)-screen_offset,1.0f);
+            glm::vec4 vector = glm::vec4(x*10,y*10,(z*6)-screen_offset,1.0f);
 
             vertice_data.push_back(vector);
 
@@ -541,6 +551,12 @@ struct BVHNode{
     
 };
 
+struct BVHNodeSmall{
+    int idx;
+    int left_child;
+    int flag;
+    int padding;
+};
 
 
 layout(std430, binding = 0) readonly buffer SphereBuffer {
@@ -552,11 +568,11 @@ layout(std430, binding = 1) readonly buffer TriangleBuffer {
 };
 
 layout(std430, binding = 2) readonly buffer BVHBuffer {
-    BVHNode all_BVHs[]; 
+    BVHNodeSmall all_BVH_nodes[]; 
 };
 
 layout(std430, binding = 3) buffer OffsetBuffer {
-    int list_sizes[];   
+    BVH bvh_list[];   
 };
 
 struct HitInfo{
@@ -649,6 +665,15 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
             vec3 v1 = vec3(tri.b);
             vec3 v2 = vec3(tri.c);
 
+            RayTracingMaterial material;
+            material.colour = vec4(1.0f,1.0f,0.0f,1.0f);
+        material.emissionColour = vec4(0.0f,0.0f,0.0f,1.0f);
+         material.specularColour = vec4(1.0f,0.0f,0.0f,1.0f);
+         material.emissionStrength =0.0f;
+        material.smoothness=1.0f;
+         material.specularProbability=1.0f;
+        material.flag =1;
+
             HitInfo hit_info;
             hit_info.did_hit = false;
             hit_info.dst = 1e10;
@@ -693,76 +718,131 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
             hit_info.hit_point = orig + t*dir;
             hit_info.dst = t;
             hit_info.normal = normalize(cross(v0v2,v0v1));
-            hit_info.material = tri.material;
+            hit_info.material = material;
 
             return hit_info;
     };
-    
-    HitInfo RayAABB(Ray ray, inout BVHNode bvh_node_list[1000]){
-        BVHNode bvh_node = bvh_node_list[0];
+    // HitInfo RayAABB(Ray ray){
+    //     BVHNodeSmall bvh_node = all_BVH_nodes[0];
         
+    //     HitInfo closest_hit_info;
+    //     closest_hit_info.did_hit = false; 
+    //     closest_hit_info.dst = 1e10;
+    //     closest_hit_info.hit_point = vec3(0.0);
+    //     closest_hit_info.normal = vec3(0.0);
+
+    //     closest_hit_info.material.colour = vec4(1.0f,1.0f,0.0f,1.0f);
+    //     closest_hit_info.material.emissionColour = vec4(0.0f,0.0f,0.0f,1.0f);
+    //      closest_hit_info.material.specularColour = vec4(1.0f,0.0f,0.0f,1.0f);
+    //      closest_hit_info.material.emissionStrength =0.0f;
+    //      closest_hit_info.material.smoothness=1.0f;
+    //      closest_hit_info.material.specularProbability=1.0f;
+    //      closest_hit_info.material.flag =1;
+
+    //     HitInfo hit_info;
+    //     hit_info.did_hit = false; 
+    //     hit_info.dst = 1e10;
+    //     hit_info.hit_point = vec3(0.0);
+    //     hit_info.normal = vec3(0.0);
+        
+    //     // while (bvh_node.flag != LEAF_NODE){
+
+    //     //     vec3 inverse_dir = 1.0 / ray.dir;
+    //     //     float tx1 = (bvh_list[bvh_node.idx].min.x - ray.origin.x)*inverse_dir.x;
+    //     //     float tx2 = (bvh_list[bvh_node.idx].max.x - ray.origin.x)*inverse_dir.x;
+
+    //     //     float tmin = min(tx1, tx2);
+    //     //     float tmax = max(tx1, tx2);
+
+    //     //     float ty1 = (bvh_list[bvh_node.idx].min.y - ray.origin.y)*inverse_dir.y;
+    //     //     float ty2 = (bvh_list[bvh_node.idx].max.y - ray.origin.y)*inverse_dir.y;
+
+    //     //     tmin = max(tmin, min(ty1, ty2));
+    //     //     tmax = min(tmax, max(ty1, ty2));
+
+    //     //     float tz1 = (bvh_list[bvh_node.idx].min.z - ray.origin.z)*inverse_dir.z;
+    //     //     float tz2 = (bvh_list[bvh_node.idx].max.z - ray.origin.z)*inverse_dir.z;
+
+    //     //     tmin = max(tmin, min(tz1, tz2));
+    //     //     tmax = min(tmax, max(tz1, tz2));
+
+    //     //     if (tmax >= tmin){
+    //     //         bvh_node = all_BVH_nodes[bvh_node.left_child];
+    //     //     }
+    //     //     else{
+    //     //         bvh_node =  all_BVH_nodes[bvh_node.left_child+1];
+    //     //     }
+
+    //     // }
+
+    //     for(int i=bvh_list[bvh_node.idx].primitive_index; i < bvh_list[bvh_node.idx].offset; i++){
+    //        HitInfo hit_info = RayTriangle(ray, triangles[i]);
+    //        if(hit_info.did_hit && hit_info.dst < closest_hit_info.dst){
+    //             closest_hit_info = hit_info;
+    //         }
+    //     }
+    //     return closest_hit_info;
+
+    // };
+
+
+
+    
+    HitInfo RayAABB(Ray ray){
         HitInfo closest_hit_info;
-        closest_hit_info.did_hit = false; 
+        closest_hit_info.did_hit = false;
         closest_hit_info.dst = 1e10;
         closest_hit_info.hit_point = vec3(0.0);
         closest_hit_info.normal = vec3(0.0);
 
-        closest_hit_info.material.colour = vec4(1.0f,1.0f,0.0f,1.0f);
-        closest_hit_info.material.emissionColour = vec4(0.0f,0.0f,0.0f,1.0f);
-         closest_hit_info.material.specularColour = vec4(1.0f,0.0f,0.0f,1.0f);
-         closest_hit_info.material.emissionStrength =0.0f;
-         closest_hit_info.material.smoothness=1.0f;
-         closest_hit_info.material.specularProbability=1.0f;
-         closest_hit_info.material.flag =1;
+        // Stack-based traversal
+        int stack[130];
+        int stackPtr = 0;
+        stack[stackPtr++] = 0; // start with root
 
-        HitInfo hit_info;
-        hit_info.did_hit = false; 
-        hit_info.dst = 1e10;
-        hit_info.hit_point = vec3(0.0);
-        hit_info.normal = vec3(0.0);
+        vec3 inverse_dir = 1.0 / ray.dir; // compute once outside loop
 
-        while (bvh_node.flag != LEAF_NODE){
-            // if(bvh_node.left_child > 1 ||bvh_node.left_child <= 1 ){
-            //     break;
-            // }
-            vec3 inverse_dir = 1.0 / ray.dir;
-            float tx1 = (bvh_node.bvh.min.x - ray.origin.x)*inverse_dir.x;
-            float tx2 = (bvh_node.bvh.max.x - ray.origin.x)*inverse_dir.x;
+        while (stackPtr > 0) {
+            BVHNodeSmall bvh_node = all_BVH_nodes[stack[--stackPtr]];
 
+            // Test this node's AABB
+            float tx1 = (bvh_list[bvh_node.idx].min.x - ray.origin.x) * inverse_dir.x;
+            float tx2 = (bvh_list[bvh_node.idx].max.x - ray.origin.x) * inverse_dir.x;
             float tmin = min(tx1, tx2);
             float tmax = max(tx1, tx2);
 
-            float ty1 = (bvh_node.bvh.min.y - ray.origin.y)*inverse_dir.y;
-            float ty2 = (bvh_node.bvh.max.y - ray.origin.y)*inverse_dir.y;
-
+            float ty1 = (bvh_list[bvh_node.idx].min.y - ray.origin.y) * inverse_dir.y;
+            float ty2 = (bvh_list[bvh_node.idx].max.y - ray.origin.y) * inverse_dir.y;
             tmin = max(tmin, min(ty1, ty2));
             tmax = min(tmax, max(ty1, ty2));
 
-            float tz1 = (bvh_node.bvh.min.z - ray.origin.z)*inverse_dir.z;
-            float tz2 = (bvh_node.bvh.max.z - ray.origin.z)*inverse_dir.z;
-
+            float tz1 = (bvh_list[bvh_node.idx].min.z - ray.origin.z) * inverse_dir.z;
+            float tz2 = (bvh_list[bvh_node.idx].max.z - ray.origin.z) * inverse_dir.z;
             tmin = max(tmin, min(tz1, tz2));
             tmax = min(tmax, max(tz1, tz2));
-            if (tmax >= tmin){
-                int a = bvh_node.left_child;
-                // bvh_node = bvh_node_list[bvh_node.left_child];
+            if (tmin > closest_hit_info.dst) continue;
+            // Ray misses this box entirely - skip it and its children
+            if (tmax < tmin || tmax < 0.0) continue;
 
+            // Ray hits this box
+            if (bvh_node.flag == LEAF_NODE) {
+                // Test all triangles in this leaf
+                for (int i = bvh_list[bvh_node.idx].primitive_index; 
+                        i < bvh_list[bvh_node.idx].offset; i++) {
+                    HitInfo hit = RayTriangle(ray, triangles[i]);
+                    if (hit.did_hit && hit.dst < closest_hit_info.dst) {
+                        closest_hit_info = hit;
+                    }
+                }
+            } else {
+                // Push BOTH children - we need to check both
+                stack[stackPtr++] = bvh_node.left_child;
+                stack[stackPtr++] = bvh_node.left_child + 1;
             }
-            else{
-                int a = bvh_node.left_child;
-                // bvh_node = bvh_node_list[bvh_node.left_child+1];
-            }
-            break;
         }
-        for(int i=bvh_node.bvh.primitive_index; i < bvh_node.bvh.offset; i++){
-           HitInfo hit_info = RayTriangle(ray, triangles[i]);
-           if(hit_info.did_hit && hit_info.dst < closest_hit_info.dst){
-                closest_hit_info = hit_info;
-            }
-        }
+
         return closest_hit_info;
-
-    };
+    }
 
 
 
@@ -807,24 +887,24 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
         int list_size_idx =0;
         int bvh_node_idx = 0;
         int i =0;
-        BVHNode bvh_node_list[1000];
-        while(i < all_BVHs.length()){
-            bvh_node_list[bvh_node_idx] = all_BVHs[i];
-            i++;
-            size++;
-            bvh_node_idx++;
-            // if(size == list_sizes[list_size_idx]){
-            //     size = 0;
-            //     bvh_node_idx = 0;
-            //     list_size_idx++;
-            //     hit_info = RayAABB(ray,  bvh_node_list);    
-            //     if(hit_info.did_hit && hit_info.dst<distance){
-            //         distance = hit_info.dst;
-            //         closest_hit_info = hit_info;
-            //     }
-            // }
-        }
-        hit_info = RayAABB(ray,  bvh_node_list);    
+        // BVHNode bvh_node_list[1000];
+        // while(i < all_BVH_nodes.length()){
+        //     bvh_node_list[bvh_node_idx] = all_BVH_nodes[i];
+        //     i++;
+        //     size++;
+        //     bvh_node_idx++;
+        //     // if(size == list_sizes[list_size_idx]){
+        //     //     size = 0;
+        //     //     bvh_node_idx = 0;
+        //     //     list_size_idx++;
+        //     //     hit_info = RayAABB(ray,  bvh_node_list);    
+        //     //     if(hit_info.did_hit && hit_info.dst<distance){
+        //     //         distance = hit_info.dst;
+        //     //         closest_hit_info = hit_info;
+        //     //     }
+        //     // }
+        // }
+        hit_info = RayAABB(ray);    
         if(hit_info.did_hit && hit_info.dst<distance){
             distance = hit_info.dst;
             closest_hit_info = hit_info;
@@ -876,7 +956,7 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
 
     void main()
     {
-        uint rays_per_pixel = 1;
+        uint rays_per_pixel = 5;
         vec2 pixelCoord = TexCoord * u_Resolution;
         int pixelIndex = int(pixelCoord.y + pixelCoord.x * u_Resolution.x);
         ivec2 pixelCoords = ivec2(pixelCoord); 
@@ -1071,12 +1151,14 @@ int main() {
     Triangle tri2 = {glm::vec4(1.0f,1.0f,1.0f,1.0f),glm::vec4(50.0f,70.0f,-7.0f,1.0f),glm::vec4(5.0f,-100.0f,-7.0f,1.0f), material};
     Triangle tri3 = {glm::vec4(1.0f,1.0f,1.0f,1.0f),glm::vec4(40.0f,40.0f,-7.0f,1.0f),glm::vec4(5.0f,30.0f,-7.0f,1.0f), material};
 
+    for(int i=0; i<100; i++){
+        tri_arr.push_back(triangle_arr[i]);
+    }
+    // tri_arr.push_back(triangle_arr[1]);
+    // tri_arr.push_back(triangle_arr[2]);
+    // tri_arr.push_back(triangle_arr[3]);
 
-    // tri_arr.push_back(tri);
-    // tri_arr.push_back(tri2);
-    // tri_arr.push_back(tri3);
-
-    tri_arr = triangle_arr;
+    // tri_arr = triangle_arr;
 
     int width = 1400;
     int height = 1400;
@@ -1093,13 +1175,15 @@ int main() {
     std::cout<<bvh_node_list[0].bvh.count<<std::endl;
 
 
-    std::vector<BVHNode> all_bvh_nodes;
-    std::vector<int> list_size;
+    std::vector<BVHNodeSmall> all_bvh_nodes;
+    std::vector<BVH> bvh_list;
 
     for(int i{0}; i<bvh_node_list.size(); i++){
-        // std::cout<<"erer"<<bvh_node_list[i].bvh.count << " "<< bvh_node_list[i].bvh.primitive_index<<" "<< bvh_node_list[i].bvh.offset<<std::endl;
-        std::cout<<i<<" "<< bvh_node_list[i].left_child<<" "<< bvh_node_list[i].left_child+1<< " "<<std::endl;
-        all_bvh_nodes.push_back(bvh_node_list[i]);
+        std::cout<<"erer"<<bvh_node_list[i].bvh.count << " "<< bvh_node_list[i].bvh.primitive_index<<" "<< bvh_node_list[i].bvh.offset<<std::endl;
+        // std::cout<<i<<" "<< bvh_node_list[i].left_child<<" "<< bvh_node_list[i].left_child+1<< " "<<std::endl;
+        BVHNodeSmall bvh_node_small = {i,bvh_node_list[i].left_child, bvh_node_list[i].flag, 0};
+        all_bvh_nodes.push_back(bvh_node_small);
+        bvh_list.push_back(bvh_node_list[i].bvh);
     }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -1134,9 +1218,8 @@ int main() {
     create_triangles(tri_arr, triangleSSBO, shaderProgram);
     
 
-    list_size.push_back(all_bvh_nodes.size());
     create_BVH_nodes(all_bvh_nodes, BVHSSBO, shaderProgram); 
-    // create_list_size(list_size, LSSSBO, shaderProgram); 
+    create_BVH_list(bvh_list, LSSSBO, shaderProgram); 
 
 
     // Create fullscreen quad (covers entire screen in NDC coordinates)
@@ -1270,12 +1353,12 @@ void create_triangles(const std::vector<Triangle>& triangles, GLuint& triangleSS
 
 
 
-void create_BVH_nodes(const std::vector<BVHNode>& all_bvh_nodes, GLuint& BVHSSBO, GLuint shaderProgram) {
+void create_BVH_nodes(const std::vector<BVHNodeSmall>& all_bvh_nodes, GLuint& BVHSSBO, GLuint shaderProgram) {
 
     if (BVHSSBO == 0) glGenBuffers(1, &BVHSSBO);
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, BVHSSBO);    
-    glBufferData(GL_SHADER_STORAGE_BUFFER, all_bvh_nodes.size() * sizeof(BVHNode), all_bvh_nodes.data(), GL_STATIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, all_bvh_nodes.size() * sizeof(BVHNodeSmall), all_bvh_nodes.data(), GL_STATIC_DRAW);
     
     
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, BVHSSBO);
@@ -1283,12 +1366,12 @@ void create_BVH_nodes(const std::vector<BVHNode>& all_bvh_nodes, GLuint& BVHSSBO
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
-void create_list_size(const std::vector<int>& list_size, GLuint& LSSSBO, GLuint shaderProgram) {
+void create_BVH_list(const std::vector<BVH>& list_size, GLuint& LSSSBO, GLuint shaderProgram) {
 
     if (LSSSBO == 0) glGenBuffers(1, &LSSSBO);
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, LSSSBO);    
-    glBufferData(GL_SHADER_STORAGE_BUFFER, list_size.size() * sizeof(int), list_size.data(), GL_STATIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, list_size.size() * sizeof(BVH), list_size.data(), GL_STATIC_DRAW);
     
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, LSSSBO);
     glUseProgram(shaderProgram);
@@ -1296,6 +1379,56 @@ void create_list_size(const std::vector<int>& list_size, GLuint& LSSSBO, GLuint 
 }
 
 
+// No longer needs most parameters since it just evaluates cost
+struct SplitResult {
+    float cost;
+    glm::vec4 min1, max1;
+    glm::vec4 min2, max2;
+    int count1, count2;
+};
+
+SplitResult EvaluateSplit(
+    int axis, float boundary, 
+    const BVH& bvh, 
+    float parent_area,
+    const std::vector<std::pair<Triangle, glm::vec3>>& data)
+{
+    SplitResult result;
+    result.cost = 1e10f;
+    result.count1 = 0;
+    result.count2 = 0;
+    result.min1 = glm::vec4(1e10f, 1e10f, 1e10f, 1.0f);
+    result.max1 = glm::vec4(-1e10f, -1e10f, -1e10f, 1.0f);
+    result.min2 = glm::vec4(1e10f, 1e10f, 1e10f, 1.0f);
+    result.max2 = glm::vec4(-1e10f, -1e10f, -1e10f, 1.0f);
+
+    for (int j = bvh.primitive_index; j < bvh.offset; j++) {
+        const auto& tri = data[j].first;
+        const glm::vec3& c = data[j].second;
+
+        float val = (axis == 0) ? c.z : (axis == 1) ? c.x : c.y;
+
+        if (val < boundary) {
+            result.count1++;
+            result.min1 = glm::min(result.min1, glm::min(tri.a, glm::min(tri.b, tri.c)));
+            result.max1 = glm::max(result.max1, glm::max(tri.a, glm::max(tri.b, tri.c)));
+        } else {
+            result.count2++;
+            result.min2 = glm::min(result.min2, glm::min(tri.a, glm::min(tri.b, tri.c)));
+            result.max2 = glm::max(result.max2, glm::max(tri.a, glm::max(tri.b, tri.c)));
+        }
+    }
+
+    if (result.count1 == 0 || result.count2 == 0) return result;
+
+    glm::vec3 e1 = result.max1 - result.min1;
+    glm::vec3 e2 = result.max2 - result.min2;
+    float area1 = e1.x*e1.y + e1.y*e1.z + e1.z*e1.x;
+    float area2 = e2.x*e2.y + e2.y*e2.z + e2.z*e2.x;
+    result.cost = 0.125f + (area1/parent_area)*result.count1 + (area2/parent_area)*result.count2;
+
+    return result;
+}
 
 
 std::vector<BVHNode> SAH_BVH(std::vector<Triangle>& triangle_arr, BVH bvh){
@@ -1309,12 +1442,6 @@ std::vector<BVHNode> SAH_BVH(std::vector<Triangle>& triangle_arr, BVH bvh){
         data.push_back(pair);
         // centroids.emplace_back(centroid);
     }
-
-
-    
-
-    glm::vec3 extent_bvh = bvh.max -bvh.min;
-    float parent_area = extent_bvh.x*extent_bvh.y + extent_bvh.y*extent_bvh.z + extent_bvh.z*extent_bvh.x;
 
     std::deque<BVH> BVH_list;
     std::vector<BVHNode> bvh_node_list;
@@ -1334,13 +1461,15 @@ std::vector<BVHNode> SAH_BVH(std::vector<Triangle>& triangle_arr, BVH bvh){
 
         std::cout << bvh.count <<" OG COUNT"<<bvh.offset<<" "<<bvh.primitive_index<<std::endl;
 
-        if(bvh.count < 20){
+        if(bvh.count < 5){
             std::cout << bvh.max.x <<"BVH COUNT is LOW"<< bvh.max.y<<" "<< bvh.max.z<<std::endl;
             BVHNode leaf_node = {bvh, -1, LEAF_NODE,0,0};
             bvh_node_list.push_back(leaf_node);
             continue;
         }
-        float best_cost_function = 1e10;
+        float best_cost_function = 1e30;
+        glm::vec3 extent_bvh = bvh.max -bvh.min;
+        float parent_area = extent_bvh.x*extent_bvh.y + extent_bvh.y*extent_bvh.z + extent_bvh.z*extent_bvh.x;
         std::array<BVH,2> best_bvh_pair;   
         float step_Z = (bvh.max.z -bvh.min.z)/(num_buckets);
         float step_X = (bvh.max.x -bvh.min.x)/(num_buckets); 
@@ -1385,11 +1514,15 @@ std::vector<BVHNode> SAH_BVH(std::vector<Triangle>& triangle_arr, BVH bvh){
             }
 
         }
-        BVH_list.push_back(best_bvh_pair[0]);
-        // std::cout << best_bvh_pair[0].max.x <<"ererere"<<best_bvh_pair[0].max.y<<" "<<best_bvh_pair[0].max.z<<std::endl;
-        BVH_list.push_back(best_bvh_pair[1]);
+        int bvh_node_flag = NODE;
+        if(best_bvh_pair[0].count != 0 && best_bvh_pair[1].count != 0){
+            BVH_list.push_back(best_bvh_pair[0]);
+            BVH_list.push_back(best_bvh_pair[1]);
+            bvh_node_flag = LEAF_NODE;
+        }
+
         int left_child = bvh_node_list.size() + BVH_list.size() - 1;
-        BVHNode parent_node = {bvh, left_child, NODE,0,0};
+        BVHNode parent_node = {bvh, left_child, bvh_node_flag,0,0};
         bvh_node_list.push_back(parent_node);
 
         std::cout << best_bvh_pair[1].offset<<" "<<best_bvh_pair[1].primitive_index<<" ererere "<<  best_bvh_pair[1].count<<std::endl;
@@ -1412,22 +1545,20 @@ std::vector<BVHNode> SAH_BVH(std::vector<Triangle>& triangle_arr, BVH bvh){
 
 std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_2_min, float boundary, float& best_cost_function, BVH& bvh, std::array<BVH, 2>  bvh_pair, float parent_area, bool* flag, std::vector<std::pair<Triangle, glm::vec3>>& data){
 
-        BVH bvh_tmp_1;
-        bvh_tmp_1.max = bvh_tmp_1_max;
-        bvh_tmp_1.min = bvh.min;
-        glm::vec3 extent_bvh_1 = bvh_tmp_1.max - bvh_tmp_1.min;
-        float child_area_1 = extent_bvh_1.x*extent_bvh_1.y + extent_bvh_1.y*extent_bvh_1.z + extent_bvh_1.z*extent_bvh_1.x;
+        // BVH bvh_tmp_1;
+        // bvh_tmp_1.max = bvh_tmp_1_max;
+        // bvh_tmp_1.min = bvh.min;
+        // glm::vec3 extent_bvh_1 = bvh_tmp_1.max - bvh_tmp_1.min;
+        // float child_area_1 = extent_bvh_1.x*extent_bvh_1.y + extent_bvh_1.y*extent_bvh_1.z + extent_bvh_1.z*extent_bvh_1.x;
 
-        BVH bvh_tmp_2;
-        bvh_tmp_2.min = bvh_tmp_2_min;
-        bvh_tmp_2.max = bvh.max;
-        glm::vec3 extent_bvh_2 = bvh_tmp_2.max - bvh_tmp_2.min;
-        float child_area_2 = extent_bvh_2.x*extent_bvh_2.y + extent_bvh_2.y*extent_bvh_2.z + extent_bvh_2.z*extent_bvh_2.x;
+        // BVH bvh_tmp_2;
+        // bvh_tmp_2.min = bvh_tmp_2_min;
+        // bvh_tmp_2.max = bvh.max;
+        // glm::vec3 extent_bvh_2 = bvh_tmp_2.max - bvh_tmp_2.min;
+        // float child_area_2 = extent_bvh_2.x*extent_bvh_2.y + extent_bvh_2.y*extent_bvh_2.z + extent_bvh_2.z*extent_bvh_2.x;
 
         
-        //ratio
-        float SAR_1 = child_area_1/parent_area;
-        float SAR_2 = child_area_2/parent_area;
+
         
         int count_bvh_tmp_1 = 0;
         int count_bvh_tmp_2 = 0;
@@ -1447,7 +1578,7 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
                 data.begin() + bvh.primitive_index, 
                 data.begin() +  bvh.offset, 
                 [&](const std::pair<Triangle, glm::vec3>& c) {
-                    return is_in_BVH(c.second.x, count_bvh_tmp_1 , count_bvh_tmp_2, boundary);
+                    return is_in_BVH(c.second.z, count_bvh_tmp_1 , count_bvh_tmp_2, boundary);
                 }
             );
             partition_index = static_cast<int>(std::distance(data.begin(), partition_point));
@@ -1461,7 +1592,7 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
             data.begin() + bvh.primitive_index, 
             data.begin() + bvh.offset, 
             [&](const std::pair<Triangle, glm::vec3>& c) {
-                return is_in_BVH(c.second.y, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
+                return is_in_BVH(c.second.x, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
             }
             );
             partition_index = static_cast<int>(std::distance(data.begin(), partition_point));
@@ -1475,45 +1606,104 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
                 data.begin() + bvh.primitive_index, 
                 data.begin() + bvh.offset, 
                 [&](const std::pair<Triangle, glm::vec3>& c) {
-                    return is_in_BVH(c.second.z, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
+                    return is_in_BVH(c.second.y, count_bvh_tmp_1, count_bvh_tmp_2, boundary);
                 }
             );
             partition_index = static_cast<int>(std::distance(data.begin(), partition_point));
 
 
         }
-                    
-        count_bvh_tmp_1 = static_cast<int>(partition_index - bvh.primitive_index);
-        count_bvh_tmp_2 = static_cast<int>(bvh.offset - partition_index);
-
-        bvh_tmp_1.count = count_bvh_tmp_1;
-        bvh_tmp_1.primitive_index = bvh.primitive_index;
-        bvh_tmp_1.offset = partition_index;
-
-        bvh_tmp_2.count = count_bvh_tmp_2;
-        bvh_tmp_2.primitive_index = partition_index;
-        bvh_tmp_2.offset = bvh.offset;
-
-
-
-        float cost_function = 0.125 + SAR_1*count_bvh_tmp_1 + SAR_2*count_bvh_tmp_2;
+         BVH tight_1;
+        tight_1.min = glm::vec4(1e10, 1e10, 1e10, 1.0f);
+        tight_1.max = glm::vec4(-1e10, -1e10, -1e10, 1.0f);
         
-        if(cost_function < best_cost_function){
-            if(count_bvh_tmp_1>0 && count_bvh_tmp_2>0){
-                best_cost_function = cost_function;
-                bvh_pair = {bvh_tmp_1,bvh_tmp_2}; 
-            }
-            std::cout<<bvh_tmp_1.count<<" THE COUNT 1 "<<std::endl;
-            std::cout<<bvh_tmp_2.count<<" THE COUNT 2"<<std::endl;
-            // std::cout << bvh_pair[0].max.x <<" ererere 1 max "<<bvh_pair[0].max.y<<" "<<bvh_pair[0].max.z<<std::endl;
-            // std::cout << bvh_pair[0].min.x <<" ererere 1 min "<<bvh_pair[0].min.y<<" "<<bvh_pair[0].min.z<<std::endl;
+        for (int i = bvh.primitive_index; i < (int)partition_index; i++) {
+            tight_1.min = glm::min(tight_1.min, data[i].first.a);
+            tight_1.min = glm::min(tight_1.min, data[i].first.b);
+            tight_1.min = glm::min(tight_1.min, data[i].first.c);
+            tight_1.max = glm::max(tight_1.max, data[i].first.a);
+            tight_1.max = glm::max(tight_1.max, data[i].first.b);
+            tight_1.max = glm::max(tight_1.max, data[i].first.c);
+        }
+        tight_1.primitive_index = bvh.primitive_index;
+        tight_1.offset = partition_index;
+        tight_1.count = partition_index - bvh.primitive_index;
+        glm::vec3 extent_bvh_1 = tight_1.max - tight_1.min;
+        float child_area_1 = extent_bvh_1.x*extent_bvh_1.y + extent_bvh_1.y*extent_bvh_1.z + extent_bvh_1.z*extent_bvh_1.x;
 
-            // std::cout << bvh_pair[1].max.x <<" ererere 2 max "<< bvh_pair[1].max.y<<" "<< bvh_pair[1].max.z<<std::endl;
-            // std::cout << bvh_pair[1].min.x <<" ererere 2 min "<< bvh_pair[1].min.y<<" "<< bvh_pair[1].min.z<<std::endl;
+        BVH tight_2;
+        tight_2.min = glm::vec4(1e10, 1e10, 1e10, 1.0f);
+        tight_2.max = glm::vec4(-1e10, -1e10, -1e10, 1.0f);
+        
+        for (int i = (int)partition_index; i < bvh.offset; i++) {
+            tight_2.min = glm::min(tight_2.min, data[i].first.a);
+            tight_2.min = glm::min(tight_2.min, data[i].first.b);
+            tight_2.min = glm::min(tight_2.min, data[i].first.c);
+            tight_2.max = glm::max(tight_2.max, data[i].first.a);
+            tight_2.max = glm::max(tight_2.max, data[i].first.b);
+            tight_2.max = glm::max(tight_2.max, data[i].first.c);
+        }
+        glm::vec3 extent_bvh_2 = tight_2.max - tight_2.min;
+        float child_area_2 = extent_bvh_2.x*extent_bvh_2.y + extent_bvh_2.y*extent_bvh_2.z + extent_bvh_2.z*extent_bvh_2.x;
+        tight_2.primitive_index = partition_index;
+        tight_2.offset = bvh.offset;
+        tight_2.count = bvh.offset - partition_index;
+
+        float SAR_1 = child_area_1/parent_area;
+        float SAR_2 = child_area_2/parent_area;
+        float cost = 0.125f + SAR_1 * tight_1.count + SAR_2 * tight_2.count;
+        if (cost < best_cost_function && (tight_1.count > 0 &&  tight_2.count > 0) ){
+            best_cost_function = cost;
+            tight_1.min = tight_1.min - 0.001f;
+            tight_1.max = tight_1.max + 0.001f;
+
+            tight_2.min = tight_2.min - 0.001f;
+            tight_2.max = tight_2.max + 0.001f;
+            bvh_pair = {tight_1, tight_2};
+
+        }
+
+        return bvh_pair;
+
+        // count_bvh_tmp_1 = static_cast<int>(partition_index - bvh.primitive_index);
+        // count_bvh_tmp_2 = static_cast<int>(bvh.offset - partition_index);
+
+        // bvh_tmp_1.count = count_bvh_tmp_1;
+        // bvh_tmp_1.primitive_index = bvh.primitive_index;
+        // bvh_tmp_1.offset = partition_index;
+
+        // bvh_tmp_2.count = count_bvh_tmp_2;
+        // bvh_tmp_2.primitive_index = partition_index;
+        // bvh_tmp_2.offset = bvh.offset;
+        // float SAR_1 = child_area_1/parent_area;
+        // float SAR_2 = child_area_2/parent_area;
+
+
+
+        // float cost_function = 0.125 + SAR_1*count_bvh_tmp_1 + SAR_2*count_bvh_tmp_2;
+        
+        // if(cost_function < best_cost_function){
+        //     if(count_bvh_tmp_1>0 && count_bvh_tmp_2>0){
+        //         best_cost_function = cost_function;
+        //         bvh_tmp_1.min = bvh_tmp_1.min - 3.0f;
+        //         bvh_tmp_1.max = bvh_tmp_1.max + 3.0f;
+
+        //         bvh_tmp_2.min = bvh_tmp_2.min - 3.0f;
+        //         bvh_tmp_2.max = bvh_tmp_2.max + 3.0f;
+
+        //         bvh_pair = {bvh_tmp_1,bvh_tmp_2}; 
+        //     }
+        //     std::cout<<bvh_tmp_1.count<<" THE COUNT 1 "<<std::endl;
+        //     std::cout<<bvh_tmp_2.count<<" THE COUNT 2"<<std::endl;
+        //     // std::cout << bvh_pair[0].max.x <<" ererere 1 max "<<bvh_pair[0].max.y<<" "<<bvh_pair[0].max.z<<std::endl;
+        //     // std::cout << bvh_pair[0].min.x <<" ererere 1 min "<<bvh_pair[0].min.y<<" "<<bvh_pair[0].min.z<<std::endl;
+
+        //     // std::cout << bvh_pair[1].max.x <<" ererere 2 max "<< bvh_pair[1].max.y<<" "<< bvh_pair[1].max.z<<std::endl;
+        //     // std::cout << bvh_pair[1].min.x <<" ererere 2 min "<< bvh_pair[1].min.y<<" "<< bvh_pair[1].min.z<<std::endl;
 
             
-        }
-        return bvh_pair;
+        // }
+        // return bvh_pair;
 }
 
 
