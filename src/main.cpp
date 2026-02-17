@@ -29,7 +29,7 @@
 //  ability to show soft colours of neighboring objects on the other objects
 
 
-struct RayTracingMaterial{
+struct  alignas(16) RayTracingMaterial{
     glm::vec4 colour;
     glm::vec4 emissionColour;
     glm::vec4 specularColour;
@@ -60,24 +60,24 @@ struct Ray{
     glm::vec3 dir;
 };
 
-struct Triangle{
+struct alignas(16) Triangle{
     glm::vec4 a;
     glm::vec4 b;
     glm::vec4 c;
     RayTracingMaterial material;
 };
 
-struct BVH{
+struct  alignas(16) BVH{
     glm::vec4 min = glm::vec4(1e10,1e10,1e10,1.0f);
     glm::vec4 max = glm::vec4(0.0f,0.0f,0.0f,1.0f);
     glm::vec4 centre = min;
     int offset=0;
     int primitive_index=0;
     int count=0;
-    int padding=0;
+    int padding=0; 
 };
 
-struct BVHNode{
+struct  alignas(16) BVHNode{
     BVH bvh;
     int left_child=0;
     int flag = NODE;
@@ -177,7 +177,7 @@ std::vector<Triangle> load_object(std::string file_path, RayTracingMaterial mate
 
             iss >> x >> y >> z;  
 
-            glm::vec4 vector = glm::vec4(x*5,y*5,(z*5)-screen_offset,1.0f);
+            glm::vec4 vector = glm::vec4(x*3,y*3,(z*3)-screen_offset,1.0f);
 
             vertice_data.push_back(vector);
 
@@ -489,7 +489,7 @@ uniform int Frame;
 
 
 in vec2 TexCoord;
-int maxBounceCount = 5;
+int maxBounceCount = 3;
 
 #define LIGHT_SOURCE 2
 #define LEAF_NODE 3
@@ -655,7 +655,6 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
             hit_info.hit_point = vec3(1.0,1.0,1.0);
             hit_info.normal = vec3(1.0,1.0,1.0);
 
-            hit_info.did_hit = false;
             vec3 v0v1 = v1 - v0;
             vec3 v0v2 = v2 - v0;
             vec3 pvec = cross(dir,v0v2);
@@ -698,9 +697,16 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
 
             return hit_info;
     };
-
+    
     HitInfo RayAABB(Ray ray, inout BVHNode bvh_node_list[1000]){
         BVHNode bvh_node = bvh_node_list[0];
+        
+        HitInfo closest_hit_info;
+        closest_hit_info.did_hit = false; 
+        closest_hit_info.dst = 1e10;
+        closest_hit_info.hit_point = vec3(0.0);
+        closest_hit_info.normal = vec3(0.0);
+
         HitInfo hit_info;
         hit_info.did_hit = false; 
         hit_info.dst = 1e10;
@@ -735,13 +741,14 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
         //         bvh_node = bvh_node_list[bvh_node.left_child+1];
         //     }
         // }
-        // for(int i=bvh_node.bvh.primitive_index; i < bvh_node.bvh.offset; i++){
-        //     hit_info = RayTriangle(ray, triangles[i]);
-        // }
-        for(int i=bvh_node.bvh.primitive_index; i < bvh_node.bvh.primitive_index+1; i++){
-            hit_info = RayTriangle(ray, triangles[i]);
+        for(int i=bvh_node.bvh.primitive_index; i < bvh_node.bvh.offset; i++){
+           HitInfo hit_info = RayTriangle(ray, triangles[i]);
+           if(hit_info.did_hit && hit_info.dst < closest_hit_info.dst){
+                closest_hit_info = hit_info;
+            }
         }
-        return hit_info;
+        return closest_hit_info;
+
     };
 
 
@@ -797,6 +804,7 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
                 size = 0;
                 bvh_node_idx = 0;
                 list_size_idx++;
+                // RayAABB(ray,  bvh_node_list);
                 hit_info = RayAABB(ray,  bvh_node_list);    
                 if(hit_info.did_hit && hit_info.dst<distance){
                     distance = hit_info.dst;
@@ -851,7 +859,7 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
 
     void main()
     {
-        uint rays_per_pixel = 10;
+        uint rays_per_pixel = 1;
         vec2 pixelCoord = TexCoord * u_Resolution;
         int pixelIndex = int(pixelCoord.y + pixelCoord.x * u_Resolution.x);
         ivec2 pixelCoords = ivec2(pixelCoord); 
@@ -1043,8 +1051,14 @@ int main() {
     std::vector<Triangle> triangle_arr = load_object("VideoShip.obj", material,60.0f);
     std::vector<Triangle> tri_arr;
     Triangle tri = {glm::vec4(1.0f,1.0f,1.0f,1.0f),glm::vec4(50.0f,70.0f,-7.0f,1.0f),glm::vec4(5.0f,100.0f,-7.0f,1.0f), material};
+    Triangle tri2 = {glm::vec4(1.0f,1.0f,1.0f,1.0f),glm::vec4(50.0f,70.0f,-7.0f,1.0f),glm::vec4(5.0f,-100.0f,-7.0f,1.0f), material};
+    Triangle tri3 = {glm::vec4(1.0f,1.0f,1.0f,1.0f),glm::vec4(40.0f,40.0f,-7.0f,1.0f),glm::vec4(5.0f,30.0f,-7.0f,1.0f), material};
+
 
     // tri_arr.push_back(tri);
+    // tri_arr.push_back(tri2);
+    // tri_arr.push_back(tri3);
+
     tri_arr = triangle_arr;
 
     int width = 1400;
@@ -1372,11 +1386,11 @@ std::vector<BVHNode> SAH_BVH(std::vector<Triangle>& triangle_arr, BVH bvh){
 
     }
 
-    std::vector<Triangle> tmp;
-    for(int i{0}; i<data.size(); i++){
-        tmp.push_back(data[i].first);
-    }
-    triangle_arr = tmp;
+    // std::vector<Triangle> tmp;
+    // for(int i{0}; i<data.size(); i++){
+    //     tmp.push_back(data[i].first);
+    // }
+    // triangle_arr = tmp;
 
     return bvh_node_list;
 }
