@@ -499,7 +499,7 @@ uniform int Frame;
 
 
 in vec2 TexCoord;
-int maxBounceCount = 2;
+int maxBounceCount = 3;
 
 #define LIGHT_SOURCE 2
 #define LEAF_NODE 3
@@ -717,7 +717,12 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
             hit_info.did_hit = true;
             hit_info.hit_point = orig + t*dir;
             hit_info.dst = t;
-            hit_info.normal = normalize(cross(v0v2,v0v1));
+            vec3 outward_normal = normalize(cross(v0v1, v0v2));
+            // Ensure normal faces the ray origin
+            if (dot(outward_normal, dir) > 0.0) {
+                outward_normal = -outward_normal;
+            }
+            hit_info.normal = outward_normal;
             hit_info.material = material;
 
             return hit_info;
@@ -1151,14 +1156,14 @@ int main() {
     Triangle tri2 = {glm::vec4(1.0f,1.0f,1.0f,1.0f),glm::vec4(50.0f,70.0f,-7.0f,1.0f),glm::vec4(5.0f,-100.0f,-7.0f,1.0f), material};
     Triangle tri3 = {glm::vec4(1.0f,1.0f,1.0f,1.0f),glm::vec4(40.0f,40.0f,-7.0f,1.0f),glm::vec4(5.0f,30.0f,-7.0f,1.0f), material};
 
-    for(int i=0; i<100; i++){
-        tri_arr.push_back(triangle_arr[i]);
-    }
+    // for(int i=0; i<100; i++){
+    //     tri_arr.push_back(triangle_arr[i]);
+    // }
     // tri_arr.push_back(triangle_arr[1]);
     // tri_arr.push_back(triangle_arr[2]);
     // tri_arr.push_back(triangle_arr[3]);
 
-    // tri_arr = triangle_arr;
+    tri_arr = triangle_arr;
 
     int width = 1400;
     int height = 1400;
