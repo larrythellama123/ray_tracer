@@ -499,7 +499,7 @@ uniform int Frame;
 
 
 in vec2 TexCoord;
-int maxBounceCount = 3;
+int maxBounceCount =5;
 
 #define LIGHT_SOURCE 2
 #define LEAF_NODE 3
@@ -852,7 +852,7 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
 
 
     vec4 GetEnvironmentLight(Ray ray){
-        vec4 emitted_light = vec4(0.0, 0.0, 0.0, 0.0);
+        vec4 emitted_light = vec4(0.2f,0.1f,0.3f,1.0f);
         for(int i=0; i < spheres.length(); ++i){
             if(spheres[i].material.flag != LIGHT_SOURCE){
                 continue;
@@ -941,13 +941,19 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
                     break;
                 }
                 ray.origin = hit_info.hit_point;
-                ray.dir = RandomDirectionHemisphere(hit_info.normal,state);
+                // ray.dir = RandomDirectionHemisphere(hit_info.normal,state);
+                vec3 diffuseDir = RandomDirectionHemisphere(hit_info.normal,state); 
+                vec3 specularDir = reflect(ray.dir, hit_info.normal);
+                bool isSpecularBounce = material.specularProbability >= RandomValue(state); 
+                ray.dir = mix(diffuseDir, specularDir, material.smoothness * int(isSpecularBounce));
+
                 vec4 emitted_light = material.emissionColour * material.emissionStrength;
                 incoming_light += emitted_light * ray_color; 
-                ray_color *= material.colour;  
+                vec4 surfaceColor = mix(material.colour, material.specularColour, material.smoothness);
+                ray_color *= surfaceColor;
             }
             else{
-                incoming_light = vec4(0.2f,0.1f,0.3f,1.0f) * ray_color;
+                incoming_light += GetEnvironmentLight(ray) * ray_color;
                 break;
             }
 
@@ -1099,7 +1105,7 @@ int main() {
     RayTracingMaterial material;
     material.colour = glm::vec4(1.0f,1.0f,0.0f,1.0f);
     material.emissionColour = glm::vec4(0.0f,0.0f,0.0f,1.0f);
-    material.specularColour = glm::vec4(1.0f,0.0f,0.0f,1.0f);
+    material.specularColour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
     material.emissionStrength =0.0f;
     material.smoothness=1.0f;
     material.specularProbability=1.0f;
@@ -1107,7 +1113,7 @@ int main() {
 
     glm::vec3 sphereCenter =glm::vec3(0.0f,0.0f,0.0f);
     Sphere sphere(30,30,sphereCenter,material, 50.0f);
-    // sphere_arr.push_back(sphere);
+    sphere_arr.push_back(sphere);
 
 
 
@@ -1117,7 +1123,7 @@ int main() {
     material2.emissionColour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
     material2.specularColour= glm::vec4(1.0f,1.0f,1.0f,1.0f);
     material2.emissionStrength =1.0f;
-    material2.smoothness=1.0f;
+    material2.smoothness=0.0f;
     material2.specularProbability=1.0f;
     material2.flag = LIGHT_SOURCE;
 
@@ -1130,12 +1136,12 @@ int main() {
     material3.emissionColour = glm::vec4(0.0f,0.0f,0.0f,1.0f);
     material3.specularColour= glm::vec4(1.0f,1.0f,1.0f,1.0f);
     material3.emissionStrength =1.0f;
-    material3.smoothness=1.0f;
+    material3.smoothness=0.1f;
     material3.specularProbability=1.0f;
     material3.flag = 1;
 
-    Sphere sphere3(30,30, glm::vec3(0.0f,-250.0f,-7.0f),material3, 250.0f);
-    // sphere_arr.push_back(sphere3);
+    Sphere sphere3(30,30, glm::vec3(0.0f,-320.0f,-7.0f),material3, 250.0f);
+    sphere_arr.push_back(sphere3);
 
     RayTracingMaterial material4;
     material4.colour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
@@ -1163,7 +1169,7 @@ int main() {
     // tri_arr.push_back(triangle_arr[2]);
     // tri_arr.push_back(triangle_arr[3]);
 
-    tri_arr = triangle_arr;
+    // tri_arr = triangle_arr;
 
     int width = 1400;
     int height = 1400;
@@ -1550,20 +1556,6 @@ std::vector<BVHNode> SAH_BVH(std::vector<Triangle>& triangle_arr, BVH bvh){
 
 std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_2_min, float boundary, float& best_cost_function, BVH& bvh, std::array<BVH, 2>  bvh_pair, float parent_area, bool* flag, std::vector<std::pair<Triangle, glm::vec3>>& data){
 
-        // BVH bvh_tmp_1;
-        // bvh_tmp_1.max = bvh_tmp_1_max;
-        // bvh_tmp_1.min = bvh.min;
-        // glm::vec3 extent_bvh_1 = bvh_tmp_1.max - bvh_tmp_1.min;
-        // float child_area_1 = extent_bvh_1.x*extent_bvh_1.y + extent_bvh_1.y*extent_bvh_1.z + extent_bvh_1.z*extent_bvh_1.x;
-
-        // BVH bvh_tmp_2;
-        // bvh_tmp_2.min = bvh_tmp_2_min;
-        // bvh_tmp_2.max = bvh.max;
-        // glm::vec3 extent_bvh_2 = bvh_tmp_2.max - bvh_tmp_2.min;
-        // float child_area_2 = extent_bvh_2.x*extent_bvh_2.y + extent_bvh_2.y*extent_bvh_2.z + extent_bvh_2.z*extent_bvh_2.x;
-
-        
-
         
         int count_bvh_tmp_1 = 0;
         int count_bvh_tmp_2 = 0;
@@ -1669,46 +1661,6 @@ std::array<BVH, 2>  SplittingAndCost(glm::vec4 bvh_tmp_1_max, glm::vec4 bvh_tmp_
         }
 
         return bvh_pair;
-
-        // count_bvh_tmp_1 = static_cast<int>(partition_index - bvh.primitive_index);
-        // count_bvh_tmp_2 = static_cast<int>(bvh.offset - partition_index);
-
-        // bvh_tmp_1.count = count_bvh_tmp_1;
-        // bvh_tmp_1.primitive_index = bvh.primitive_index;
-        // bvh_tmp_1.offset = partition_index;
-
-        // bvh_tmp_2.count = count_bvh_tmp_2;
-        // bvh_tmp_2.primitive_index = partition_index;
-        // bvh_tmp_2.offset = bvh.offset;
-        // float SAR_1 = child_area_1/parent_area;
-        // float SAR_2 = child_area_2/parent_area;
-
-
-
-        // float cost_function = 0.125 + SAR_1*count_bvh_tmp_1 + SAR_2*count_bvh_tmp_2;
-        
-        // if(cost_function < best_cost_function){
-        //     if(count_bvh_tmp_1>0 && count_bvh_tmp_2>0){
-        //         best_cost_function = cost_function;
-        //         bvh_tmp_1.min = bvh_tmp_1.min - 3.0f;
-        //         bvh_tmp_1.max = bvh_tmp_1.max + 3.0f;
-
-        //         bvh_tmp_2.min = bvh_tmp_2.min - 3.0f;
-        //         bvh_tmp_2.max = bvh_tmp_2.max + 3.0f;
-
-        //         bvh_pair = {bvh_tmp_1,bvh_tmp_2}; 
-        //     }
-        //     std::cout<<bvh_tmp_1.count<<" THE COUNT 1 "<<std::endl;
-        //     std::cout<<bvh_tmp_2.count<<" THE COUNT 2"<<std::endl;
-        //     // std::cout << bvh_pair[0].max.x <<" ererere 1 max "<<bvh_pair[0].max.y<<" "<<bvh_pair[0].max.z<<std::endl;
-        //     // std::cout << bvh_pair[0].min.x <<" ererere 1 min "<<bvh_pair[0].min.y<<" "<<bvh_pair[0].min.z<<std::endl;
-
-        //     // std::cout << bvh_pair[1].max.x <<" ererere 2 max "<< bvh_pair[1].max.y<<" "<< bvh_pair[1].max.z<<std::endl;
-        //     // std::cout << bvh_pair[1].min.x <<" ererere 2 min "<< bvh_pair[1].min.y<<" "<< bvh_pair[1].min.z<<std::endl;
-
-            
-        // }
-        // return bvh_pair;
 }
 
 
