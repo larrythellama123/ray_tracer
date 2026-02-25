@@ -641,14 +641,19 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
         float b = 2 * dot(offset_ray_origin,ray.dir);
         float c = dot(offset_ray_origin,offset_ray_origin) - sphereRadius*sphereRadius;
         float discrim = b*b - 4*a*c;
-
+        vec3 outward_normal;
         if(discrim >= 0){
             float dst = (-b - sqrt(discrim))/(2*a);
             if (dst >= 0.0) {
                 hit_info.did_hit = true;
                 hit_info.dst = dst;
                 hit_info.hit_point = ray.origin + dst * ray.dir;
-                hit_info.normal = normalize(hit_info.hit_point - sphereCenter);
+                // outward_normal = normalize(hit_info.hit_point - sphereCenter);
+                outward_normal = normalize(sphereCenter - hit_info.hit_point);
+                if (dot(outward_normal, ray.dir) > 0.0) {
+                    outward_normal = -outward_normal;
+                }
+                hit_info.normal = outward_normal;
                 hit_info.material = material;
             }
         }
@@ -667,12 +672,12 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
 
             RayTracingMaterial material;
             material.colour = vec4(1.0f,1.0f,0.0f,1.0f);
-        material.emissionColour = vec4(0.0f,0.0f,0.0f,1.0f);
-         material.specularColour = vec4(1.0f,0.0f,0.0f,1.0f);
-         material.emissionStrength =0.0f;
-        material.smoothness=1.0f;
-         material.specularProbability=1.0f;
-        material.flag =1;
+            material.emissionColour = vec4(0.0f,0.0f,0.0f,1.0f);
+            material.specularColour = vec4(1.0f,0.0f,0.0f,1.0f);
+            material.emissionStrength =0.0f;
+            material.smoothness=1.0f;
+            material.specularProbability=1.0f;
+            material.flag =1;
 
             HitInfo hit_info;
             hit_info.did_hit = false;
@@ -727,71 +732,6 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
 
             return hit_info;
     };
-    // HitInfo RayAABB(Ray ray){
-    //     BVHNodeSmall bvh_node = all_BVH_nodes[0];
-        
-    //     HitInfo closest_hit_info;
-    //     closest_hit_info.did_hit = false; 
-    //     closest_hit_info.dst = 1e10;
-    //     closest_hit_info.hit_point = vec3(0.0);
-    //     closest_hit_info.normal = vec3(0.0);
-
-    //     closest_hit_info.material.colour = vec4(1.0f,1.0f,0.0f,1.0f);
-    //     closest_hit_info.material.emissionColour = vec4(0.0f,0.0f,0.0f,1.0f);
-    //      closest_hit_info.material.specularColour = vec4(1.0f,0.0f,0.0f,1.0f);
-    //      closest_hit_info.material.emissionStrength =0.0f;
-    //      closest_hit_info.material.smoothness=1.0f;
-    //      closest_hit_info.material.specularProbability=1.0f;
-    //      closest_hit_info.material.flag =1;
-
-    //     HitInfo hit_info;
-    //     hit_info.did_hit = false; 
-    //     hit_info.dst = 1e10;
-    //     hit_info.hit_point = vec3(0.0);
-    //     hit_info.normal = vec3(0.0);
-        
-    //     // while (bvh_node.flag != LEAF_NODE){
-
-    //     //     vec3 inverse_dir = 1.0 / ray.dir;
-    //     //     float tx1 = (bvh_list[bvh_node.idx].min.x - ray.origin.x)*inverse_dir.x;
-    //     //     float tx2 = (bvh_list[bvh_node.idx].max.x - ray.origin.x)*inverse_dir.x;
-
-    //     //     float tmin = min(tx1, tx2);
-    //     //     float tmax = max(tx1, tx2);
-
-    //     //     float ty1 = (bvh_list[bvh_node.idx].min.y - ray.origin.y)*inverse_dir.y;
-    //     //     float ty2 = (bvh_list[bvh_node.idx].max.y - ray.origin.y)*inverse_dir.y;
-
-    //     //     tmin = max(tmin, min(ty1, ty2));
-    //     //     tmax = min(tmax, max(ty1, ty2));
-
-    //     //     float tz1 = (bvh_list[bvh_node.idx].min.z - ray.origin.z)*inverse_dir.z;
-    //     //     float tz2 = (bvh_list[bvh_node.idx].max.z - ray.origin.z)*inverse_dir.z;
-
-    //     //     tmin = max(tmin, min(tz1, tz2));
-    //     //     tmax = min(tmax, max(tz1, tz2));
-
-    //     //     if (tmax >= tmin){
-    //     //         bvh_node = all_BVH_nodes[bvh_node.left_child];
-    //     //     }
-    //     //     else{
-    //     //         bvh_node =  all_BVH_nodes[bvh_node.left_child+1];
-    //     //     }
-
-    //     // }
-
-    //     for(int i=bvh_list[bvh_node.idx].primitive_index; i < bvh_list[bvh_node.idx].offset; i++){
-    //        HitInfo hit_info = RayTriangle(ray, triangles[i]);
-    //        if(hit_info.did_hit && hit_info.dst < closest_hit_info.dst){
-    //             closest_hit_info = hit_info;
-    //         }
-    //     }
-    //     return closest_hit_info;
-
-    // };
-
-
-
     
     HitInfo RayAABB(Ray ray){
         HitInfo closest_hit_info;
@@ -800,17 +740,16 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
         closest_hit_info.hit_point = vec3(0.0);
         closest_hit_info.normal = vec3(0.0);
 
-        // Stack-based traversal
+        
         int stack[130];
         int stackPtr = 0;
-        stack[stackPtr++] = 0; // start with root
+        stack[stackPtr++] = 0; 
 
-        vec3 inverse_dir = 1.0 / ray.dir; // compute once outside loop
+        vec3 inverse_dir = 1.0 / ray.dir; 
 
         while (stackPtr > 0) {
             BVHNodeSmall bvh_node = all_BVH_nodes[stack[--stackPtr]];
 
-            // Test this node's AABB
             float tx1 = (bvh_list[bvh_node.idx].min.x - ray.origin.x) * inverse_dir.x;
             float tx2 = (bvh_list[bvh_node.idx].max.x - ray.origin.x) * inverse_dir.x;
             float tmin = min(tx1, tx2);
@@ -840,7 +779,7 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
                     }
                 }
             } else {
-                // Push BOTH children - we need to check both
+                // push both children to check
                 stack[stackPtr++] = bvh_node.left_child;
                 stack[stackPtr++] = bvh_node.left_child + 1;
             }
@@ -944,7 +883,11 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
                 // ray.dir = RandomDirectionHemisphere(hit_info.normal,state);
                 vec3 diffuseDir = RandomDirectionHemisphere(hit_info.normal,state); 
                 vec3 specularDir = reflect(ray.dir, hit_info.normal);
+                if(dot(specularDir,hit_info.normal) < 0.0){
+                    specularDir = -specularDir;
+                }
                 bool isSpecularBounce = material.specularProbability >= RandomValue(state); 
+
                 ray.dir = mix(diffuseDir, specularDir, material.smoothness * int(isSpecularBounce));
 
                 vec4 emitted_light = material.emissionColour * material.emissionStrength;
