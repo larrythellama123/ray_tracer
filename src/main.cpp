@@ -499,7 +499,7 @@ uniform int Frame;
 
 
 in vec2 TexCoord;
-int maxBounceCount =5;
+int maxBounceCount =2;
 
 #define LIGHT_SOURCE 2
 #define LEAF_NODE 3
@@ -673,7 +673,7 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
             RayTracingMaterial material;
             material.colour = vec4(1.0f,1.0f,0.0f,1.0f);
             material.emissionColour = vec4(0.0f,0.0f,0.0f,1.0f);
-            material.specularColour = vec4(1.0f,0.0f,0.0f,1.0f);
+            material.specularColour = vec4(1.0f,1.0f,1.0f,1.0f);
             material.emissionStrength =0.0f;
             material.smoothness=1.0f;
             material.specularProbability=1.0f;
@@ -879,7 +879,7 @@ vec3 RandomDirectionHemisphere(vec3 normalVector, inout uint state)
                     incoming_light = vec4(1.0f,1.0f,1.0f,1.0f) * ray_color;
                     break;
                 }
-                ray.origin = hit_info.hit_point;
+                ray.origin = hit_info.hit_point + 0.000001;
                 // ray.dir = RandomDirectionHemisphere(hit_info.normal,state);
                 vec3 diffuseDir = RandomDirectionHemisphere(hit_info.normal,state); 
                 vec3 specularDir = reflect(ray.dir, hit_info.normal);
@@ -1046,7 +1046,7 @@ int main() {
     std::vector<Sphere>sphere_arr;
     
     RayTracingMaterial material;
-    material.colour = glm::vec4(1.0f,1.0f,0.0f,1.0f);
+    material.colour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
     material.emissionColour = glm::vec4(0.0f,0.0f,0.0f,1.0f);
     material.specularColour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
     material.emissionStrength =0.0f;
@@ -1084,7 +1084,7 @@ int main() {
     material3.flag = 1;
 
     Sphere sphere3(30,30, glm::vec3(0.0f,-320.0f,-7.0f),material3, 250.0f);
-    sphere_arr.push_back(sphere3);
+    // sphere_arr.push_back(sphere3);
 
     RayTracingMaterial material4;
     material4.colour = glm::vec4(1.0f,1.0f,1.0f,1.0f);
@@ -1108,7 +1108,7 @@ int main() {
     // for(int i=0; i<100; i++){
     //     tri_arr.push_back(triangle_arr[i]);
     // }
-    // tri_arr.push_back(triangle_arr[1]);
+    tri_arr.push_back(tri);
     // tri_arr.push_back(triangle_arr[2]);
     // tri_arr.push_back(triangle_arr[3]);
 
